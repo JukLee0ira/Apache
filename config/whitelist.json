@@ -1,0 +1,21 @@
+{
+  "allowed_addresses": [
+    "0x1234567890123456789012345678901234567890",
+    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+  ],
+  "allowed_methods": [
+    "eth_call",
+    "eth_getLogs",
+    "eth_blockNumber",
+    "net_version",
+    "eth_chainId",
+    "eth_getBalance",
+    "sign_rawTransaction"
+  ],
+  "allowed_events": [
+    "Transfer(address,address,uint256)",
+    "Approval(address,address,uint256)",
+    "Deposit(address,uint256)",
+    "Withdraw(address,uint256)"
+  ]
+}

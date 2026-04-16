@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# view_blocked.sh - View blocked records (from Mock Server)
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "=========================================="
+echo "Blocked Request Record Query"
+echo "=========================================="
+echo ""
+
+if ! curl -s http://localhost:8545/health | grep -q OK; then
+    echo -e "${RED}X Mock Server not running${NC}"
+    exit 1
+fi
+
+# Get statistics
+echo "Statistics:"
+echo "-------------------------------------------"
+stats=$(curl -s http://localhost:8545/stats 2>/dev/null)
+if [ $? -eq 0 ]; then
+    echo "$stats" | python3 -m json.tool 2>/dev/null || echo "$stats"
+else
+    echo "   Unable to fetch statistics"
+fi
+
+echo ""
+echo "Recent blocked records:"
+echo "-------------------------------------------"
+blocked=$(curl -s http://localhost:8545/blocked 2>/dev/null)
+if [ -n "$blocked" ] && [ "$blocked" != "[]" ]; then
+    echo "$blocked" | python3 -m json.tool 2>/dev/null || echo "$blocked"
+else
+    echo "  (no blocked records yet)"
+fi
+
+echo ""
+echo "Detailed Apache blocked logs:"
+echo "-------------------------------------------"
+docker logs apache-rpc-proxy 2>&1 | grep "\[BLOCKED\]" | tail -5 | sed 's/^/  /' \
+    || echo "  (no blocked logs yet)"
+
+echo ""
+echo "Real-time monitoring commands:"
+echo "  # Monitor Apache blocking"
+echo "  docker logs apache-rpc-proxy -f | grep BLOCKED"
+echo ""
+echo "  # Monitor backend reception"
+echo "  docker logs ethereum-rpc-mock -f | grep RECEIVED"
+echo ""

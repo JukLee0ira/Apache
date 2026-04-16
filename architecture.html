@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ethereum RPC Filter POC - Architecture Diagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 50px;
+            font-size: 1.1rem;
+        }
+
+        .architecture {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            margin-bottom: 60px;
+        }
+
+        .layer {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .component {
+            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 16px;
+            padding: 25px;
+            min-width: 200px;
+            text-align: center;
+            position: relative;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .component:hover {
+            transform: translateY(-5px);
+            border-color: #00d4ff;
+            box-shadow: 0 20px 40px rgba(0, 212, 255, 0.2);
+        }
+
+        .component-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .component-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .component-desc {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+
+        .client .component-icon { color: #4ade80; }
+        .apache .component-icon { color: #f59e0b; }
+        .lua .component-icon { color: #ec4899; }
+        .backend .component-icon { color: #8b5cf6; }
+        .config .component-icon { color: #06b6d4; }
+
+        .flow {
+            display: flex;
+            justify-content: center;
+            padding: 15px 0;
+        }
+
+        .arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #00d4ff;
+        }
+
+        .arrow-line {
+            width: 3px;
+            height: 40px;
+            background: linear-gradient(to bottom, #00d4ff, transparent);
+            position: relative;
+        }
+
+        .arrow-line::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 10px solid #00d4ff;
+        }
+
+        .arrow-label {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 8px;
+            text-align: center;
+            max-width: 150px;
+        }
+
+        .arrow-label.blocked {
+            color: #ef4444;
+        }
+
+        .arrow-label.allowed {
+            color: #4ade80;
+        }
+
+        /* Data flow annotation */
+        .data-flow {
+            position: relative;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 12px;
+            border: 1px dashed rgba(0, 212, 255, 0.5);
+        }
+
+        .data-flow-title {
+            position: absolute;
+            top: -12px;
+            left: 20px;
+            background: #1a1a3e;
+            padding: 0 10px;
+            font-size: 0.85rem;
+            color: #00d4ff;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+
+        .flow-step-num {
+            background: #00d4ff;
+            color: #0f0f23;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
+
+        .flow-step.blocked {
+            color: #ef4444;
+        }
+
+        .flow-step.blocked .flow-step-num {
+            background: #ef4444;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .legend-color.allowed { background: #4ade80; }
+        .legend-color.blocked { background: #ef4444; }
+        .legend-color.config { background: #06b6d4; }
+
+        @media (max-width: 768px) {
+            .component {
+                min-width: 150px;
+                padding: 15px;
+            }
+            .component-icon {
+                font-size: 2rem;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ethereum RPC Filter POC</h1>
+        <p class="subtitle">Apache + Lua Whitelist Filtering Architecture</p>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color allowed"></div>
+                <span>Allowed Request (200)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color blocked"></div>
+                <span>Blocked Request (403)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color config"></div>
+                <span>Configuration File</span>
+            </div>
+        </div>
+
+        <!-- Architecture Diagram -->
+        <div class="architecture">
+            <!-- Layer 1: Client -->
+            <div class="layer">
+                <div class="component client">
+                    <div class="component-icon">User</div>
+                    <div class="component-name">Client</div>
+                    <div class="component-desc">DApp / Wallet / Frontend</div>
+                </div>
+                <div class="component client">
+                    <div class="component-icon">Globe</div>
+                    <div class="component-name">Browser / curl</div>
+                    <div class="component-desc">Testing Tools</div>
+                </div>
+            </div>
+
+            <div class="flow">
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <div class="arrow-label">POST /rpc<br>JSON-RPC Request</div>
+                </div>
+            </div>
+
+            <!-- Layer 2: Apache -->
+            <div class="layer">
+                <div class="component apache">
+                    <div class="component-icon">Circle</div>
+                    <div class="component-name">Apache Proxy</div>
+                    <div class="component-desc">Port 8888:80<br>mod_lua enabled</div>
+                </div>
+            </div>
+
+            <div class="flow">
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <div class="arrow-label">LuaMapHandler<br>Route to Script</div>
+                </div>
+            </div>
+
+            <!-- Layer 3: Lua -->
+            <div class="layer">
+                <div class="component lua">
+                    <div class="component-icon">Moon</div>
+                    <div class="component-name">Lua Filter Script</div>
+                    <div class="component-desc">rpc_proxy.lua<br>Whitelist verification</div>
+                </div>
+                <div class="component config">
+                    <div class="component-icon">Clipboard</div>
+                    <div class="component-name">whitelist.json</div>
+                    <div class="component-desc">Whitelist config<br>Addresses + Methods</div>
+                </div>
+            </div>
+
+            <div class="flow">
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <div class="arrow-label allowed">ALLOW -> curl to backend</div>
+                </div>
+            </div>
+
+            <!-- Layer 4: Backend -->
+            <div class="layer">
+                <div class="component backend">
+                    <div class="component-icon">Diamond</div>
+                    <div class="component-name">Mock RPC</div>
+                    <div class="component-desc">Port 8545<br>Python HTTP Server</div>
+                </div>
+            </div>
+
+            <div class="flow">
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <div class="arrow-label">Return JSON-RPC Response</div>
+                </div>
+            </div>
+
+            <!-- Return -->
+            <div class="layer">
+                <div class="component" style="background: linear-gradient(145deg, rgba(74, 222, 128, 0.2), rgba(74, 222, 128, 0.1));">
+                    <div class="component-icon">Checkmark</div>
+                    <div class="component-name">HTTP 200</div>
+                    <div class="component-desc">Response returned to client</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blocking Flow -->
+        <h2 style="text-align: center; margin: 40px 0 30px; color: #ef4444;">Blocking Flow</h2>
+
+        <div class="data-flow">
+            <div class="data-flow-title">When request does not satisfy whitelist</div>
+
+            <div class="flow-step blocked">
+                <div class="flow-step-num">1</div>
+                <span>Lua script verification fails → Return HTTP 403</span>
+            </div>
+            <div class="flow-step blocked">
+                <div class="flow-step-num">2</div>
+                <span>Block log asynchronously sent to Mock `/blocked` endpoint</span>
+            </div>
+            <div class="flow-step blocked">
+                <div class="flow-step-num">3</div>
+                <span>Mock Server records blocking event to memory</span>
+            </div>
+            <div class="flow-step">
+                <div class="flow-step-num">4</div>
+                <span>Response returned to client (no actual request reached backend)</span>
+            </div>
+        </div>
+
+        <!-- Whitelist Check Flow -->
+        <h2 style="text-align: center; margin: 40px 0 30px;">Whitelist Check Logic</h2>
+
+        <div class="data-flow">
+            <div class="data-flow-title">rpc_proxy.lua Verification Process</div>
+
+            <div class="flow-step">
+                <div class="flow-step-num">1</div>
+                <span>Parse JSON-RPC request body</span>
+            </div>
+            <div class="flow-step">
+                <div class="flow-step-num">2</div>
+                <span>Check if method is in allowed_methods</span>
+            </div>
+            <div class="flow-step">
+                <div class="flow-step-num">3</div>
+                <span>If eth_call / eth_getLogs, check if address is in allowed_addresses</span>
+            </div>
+            <div class="flow-step allowed">
+                <div class="flow-step-num">Checkmark</div>
+                <span>All passed → Forward to backend</span>
+            </div>
+            <div class="flow-step blocked">
+                <div class="flow-step-num">X</div>
+                <span>Any failed → Return 403, record to blocked</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

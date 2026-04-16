@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  rpc-backend:
+    image: python:3.11-slim
+    container_name: ethereum-rpc-mock
+    command: python /app/mock_rpc.py
+    volumes:
+      - ./mock_rpc.py:/app/mock_rpc.py
+    ports:
+      - "8545:8545"
+    networks:
+      - rpc-network
+
+  apache-proxy:
+    build:
+      context: ./apache
+      dockerfile: Dockerfile
+    container_name: apache-rpc-proxy
+    ports:
+      - "8888:80"
+    volumes:
+      - ./scripts:/usr/local/apache2/scripts
+      - ./apache/conf/sites-enabled:/etc/apache2/sites-enabled
+      - ./config:/etc/apache2/config:ro
+    depends_on:
+      - rpc-backend
+    networks:
+      - rpc-network
+
+networks:
+  rpc-network:
+    driver: bridge
