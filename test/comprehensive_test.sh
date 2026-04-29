@@ -27,6 +27,47 @@ section() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
+rpc_post_with_status() {
+    local payload="$1"
+    curl -s -w "\n%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$PROXY/rpc"
+}
+
+assert_rawtx_allowed() {
+    local desc="$1"
+    local tx="$2"
+    local payload="{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendRawTransaction\",\"params\":[\"$tx\"],\"id\":1}"
+    local resp body code
+    resp=$(rpc_post_with_status "$payload")
+    body=$(printf "%s" "$resp" | sed '$d')
+    code=$(printf "%s" "$resp" | sed -n '$p')
+
+    if [ "$code" = "200" ] && echo "$body" | grep -q '"result"'; then
+        pass "$desc"
+    else
+        fail "$desc (expected 200 + result, got code=$code body=$body)"
+    fi
+}
+
+assert_rawtx_blocked() {
+    local desc="$1"
+    local tx="$2"
+    local expected_msg="$3"
+    local payload="{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendRawTransaction\",\"params\":[\"$tx\"],\"id\":1}"
+    local resp body code
+    resp=$(rpc_post_with_status "$payload")
+    body=$(printf "%s" "$resp" | sed '$d')
+    code=$(printf "%s" "$resp" | sed -n '$p')
+
+    if [ "$code" = "403" ] && echo "$body" | grep -q "$expected_msg"; then
+        pass "$desc"
+    else
+        fail "$desc (expected 403 + '$expected_msg', got code=$code body=$body)"
+    fi
+}
+
 # ============ Main Process ============
 clear
 section "Ethereum RPC Filter - Fully Automated Test"
@@ -87,42 +128,37 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
     "$PROXY/rpc")
 [ "$code" = "200" ] && pass "Returned 200" || fail "Returned $code"
 
-# 4.1 sign_rawTransaction Tests (NEW)
-section "4.1 sign_rawTransaction Tests"
-echo "  sign_rawTransaction (whitelisted from/to): "
-code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"sign_rawTransaction","params":[{"from":"0x1234567890123456789012345678901234567890","to":"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd","data":"0x70a0823100000000000000000000000012345678901234567890123456789012345678"}],"id":1}' \
-    "$PROXY/rpc")
-[ "$code" = "200" ] && pass "Returned 200" || fail "Returned $code"
+# 4.1 eth_sendRawTransaction Tests
+# Test transactions are RLP-encoded legacy (type-0) transactions.
+# Structure: RLP([nonce, gasPrice, gasLimit, to, value, data, v, r, s])
+# Signatures use r=s=0 (structurally valid for mock server, cryptographically invalid).
+#
+# TX_TO_WHITELISTED  : to=0xabcdefabcdefabcdefabcdefabcdefabcdefabcd (whitelisted)
+# TX_TO_WHITELISTED2 : to=0x1234567890123456789012345678901234567890 (whitelisted), with ERC20 data
+# TX_TO_BLOCKED      : to=0x0000000000000000000000000000000000000001 (not whitelisted)
+TX_TO_WHITELISTED="0xe4808504a817c80082520894abcdefabcdefabcdefabcdefabcdefabcdefabcd80801c8080"
+TX_TO_WHITELISTED2="0xf869808504a817c80082520894123456789012345678901234567890123456789080b844a9059cbb000000000000000000000000123456789012345678901234567890123456789000000000000000000000000000000000000000000000000000000000000000011c8080"
+TX_TO_BLOCKED="0xe4808504a817c80082520894000000000000000000000000000000000000000180801c8080"
+TX_BAD_HEX_CHAR="0xdeadbeefzz"
+TX_BAD_HEX_ODD="0xabc"
+TX_BAD_EMPTY="0x"
+TX_BAD_RLP_TRUNCATED="0xe4808504a817c80082520894abcdefabcdefabcdefabcdefabcdefabcdefabcd80801c80"
+TX_BAD_UNKNOWN_TYPE="0x03e4808504a817c80082520894abcdefabcdefabcdefabcdefabcdefabcdefabcd80801c8080"
+TX_BAD_CONTRACT_CREATE="0xd0808504a817c8008252088080801c8080"
+TX_BAD_TO_LEN_19="0xe3808504a817c800825208931111111111111111111111111111111111111180801c8080"
 
-echo "  sign_rawTransaction (whitelisted from only): "
-code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"sign_rawTransaction","params":[{"from":"0x1234567890123456789012345678901234567890","data":"0x"}],"id":1}' \
-    "$PROXY/rpc")
-[ "$code" = "200" ] && pass "Returned 200" || fail "Returned $code"
+section "4.1 eth_sendRawTransaction Tests"
 
-echo "  sign_rawTransaction (non-whitelisted from): "
-code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"sign_rawTransaction","params":[{"from":"0x0000000000000000000000000000000000000000","to":"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd","data":"0x"}],"id":1}' \
-    "$PROXY/rpc")
-[ "$code" = "403" ] && pass "Blocked (403)" || fail "Not blocked (expected 403, got $code)"
-
-echo "  sign_rawTransaction (non-whitelisted to): "
-code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"sign_rawTransaction","params":[{"from":"0x1234567890123456789012345678901234567890","to":"0x0000000000000000000000000000000000000000","data":"0x"}],"id":1}' \
-    "$PROXY/rpc")
-[ "$code" = "403" ] && pass "Blocked (403)" || fail "Not blocked (expected 403, got $code)"
-
-echo "  sign_rawTransaction (with data field decode): "
-code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"sign_rawTransaction","params":[{"from":"0x1234567890123456789012345678901234567890","to":"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd","data":"0xa9059cbb000000000000000000000000abcdabcdabcdabcdabcdabcdabcdabcdabcd0000000000000000000000000000000000000000000000000000000000000001"}],"id":1}' \
-    "$PROXY/rpc")
-[ "$code" = "200" ] && pass "Returned 200" || fail "Returned $code"
+assert_rawtx_allowed "rawTx allow: whitelisted to, no data" "$TX_TO_WHITELISTED"
+assert_rawtx_allowed "rawTx allow: whitelisted to, ERC20 data" "$TX_TO_WHITELISTED2"
+assert_rawtx_blocked "rawTx block: non-whitelisted to" "$TX_TO_BLOCKED" "To address not allowed"
+assert_rawtx_blocked "rawTx block: invalid hex char" "$TX_BAD_HEX_CHAR" "invalid hex encoding"
+assert_rawtx_blocked "rawTx block: odd-length hex" "$TX_BAD_HEX_ODD" "hex length must be even"
+assert_rawtx_blocked "rawTx block: empty hex payload" "$TX_BAD_EMPTY" "invalid hex encoding"
+assert_rawtx_blocked "rawTx block: truncated RLP" "$TX_BAD_RLP_TRUNCATED" "RLP decode failed"
+assert_rawtx_blocked "rawTx block: unknown tx type" "$TX_BAD_UNKNOWN_TYPE" "unsupported transaction type"
+assert_rawtx_blocked "rawTx block: contract creation (missing to)" "$TX_BAD_CONTRACT_CREATE" "invalid to field length"
+assert_rawtx_blocked "rawTx block: to length != 20 bytes" "$TX_BAD_TO_LEN_19" "invalid to field length"
 
 # 5. Non-whitelisted Methods
 section "5. Non-whitelisted Method Blocking"
@@ -181,12 +217,12 @@ else
     fail "Error message incomplete: $resp"
 fi
 
-echo "  Check sign_rawTransaction blocked response:"
+echo "  Check eth_sendRawTransaction blocked response (non-whitelisted to):"
 resp=$(curl -s -X POST -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"sign_rawTransaction","params":[{"from":"0x0000000000000000000000000000000000000000","to":"0x1234567890123456789012345678901234567890","data":"0x"}],"id":1}' \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendRawTransaction\",\"params\":[\"$TX_TO_BLOCKED\"],\"id\":1}" \
     "$PROXY/rpc")
-if echo "$resp" | grep -q "From address not allowed"; then
-    pass "Contains from address error message"
+if echo "$resp" | grep -q "To address not allowed"; then
+    pass "Contains to address error message"
 else
     fail "Error message incomplete: $resp"
 fi
@@ -240,12 +276,21 @@ fi
 section "10. API Endpoint Check"
 echo "Checking /blocked endpoint..."
 blocked_data=$(curl -s "$MOCK/blocked" 2>/dev/null || echo "")
-if echo "$blocked_data" | python3 -c "import sys,json; data=json.load(sys.stdin); print(len(data) if isinstance(data, list) else 0)" 2>/dev/null | grep -q "^[0-9]\+$"; then
-    count=$(echo "$blocked_data" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-    pass "/blocked endpoint working (returned $count records)"
+if command -v jq >/dev/null 2>&1; then
+    count=$(echo "$blocked_data" | jq 'if type=="array" then length else -1 end' 2>/dev/null || echo "-1")
+    if [ "$count" -ge 0 ] 2>/dev/null; then
+        pass "/blocked endpoint working (returned $count records)"
+    else
+        info="No blocked records or endpoint not yet called"
+        echo -e "  ${BLUE}i${NC} $info"
+    fi
 else
-    info="No blocked records or endpoint not yet called"
-    echo -e "  ${BLUE}i${NC} $info"
+    if [ -n "$blocked_data" ]; then
+        pass "/blocked endpoint reachable (jq not installed, skip count)"
+    else
+        info="No blocked records or endpoint not yet called"
+        echo -e "  ${BLUE}i${NC} $info"
+    fi
 fi
 
 echo "Checking /stats endpoint..."

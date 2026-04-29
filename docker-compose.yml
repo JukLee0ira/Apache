@@ -2,11 +2,10 @@ version: '3.8'
 
 services:
   rpc-backend:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: mock-backend/Dockerfile
     container_name: ethereum-rpc-mock
-    command: python /app/mock_rpc.py
-    volumes:
-      - ./mock_rpc.py:/app/mock_rpc.py
     ports:
       - "8545:8545"
     networks:

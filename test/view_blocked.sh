@@ -22,7 +22,11 @@ echo "Statistics:"
 echo "-------------------------------------------"
 stats=$(curl -s http://localhost:8545/stats 2>/dev/null)
 if [ $? -eq 0 ]; then
-    echo "$stats" | python3 -m json.tool 2>/dev/null || echo "$stats"
+    if command -v jq >/dev/null 2>&1; then
+        echo "$stats" | jq . 2>/dev/null || echo "$stats"
+    else
+        echo "$stats"
+    fi
 else
     echo "   Unable to fetch statistics"
 fi
@@ -32,7 +36,11 @@ echo "Recent blocked records:"
 echo "-------------------------------------------"
 blocked=$(curl -s http://localhost:8545/blocked 2>/dev/null)
 if [ -n "$blocked" ] && [ "$blocked" != "[]" ]; then
-    echo "$blocked" | python3 -m json.tool 2>/dev/null || echo "$blocked"
+    if command -v jq >/dev/null 2>&1; then
+        echo "$blocked" | jq . 2>/dev/null || echo "$blocked"
+    else
+        echo "$blocked"
+    fi
 else
     echo "  (no blocked records yet)"
 fi

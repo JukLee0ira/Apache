@@ -10,7 +10,7 @@
     "net_version",
     "eth_chainId",
     "eth_getBalance",
-    "sign_rawTransaction"
+    "eth_sendRawTransaction"
   ],
   "allowed_events": [
     "Transfer(address,address,uint256)",

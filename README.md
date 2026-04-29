@@ -54,7 +54,7 @@ curl -i -X POST http://localhost:8888/rpc \
 |-----------|---------|
 | Apache | 2.4.x |
 | Lua | 5.1.x |
-| Python | 3.11-slim |
+| Mock Backend | Lua 5.1 + LuaSocket |
 | Debian | bookworm-slim |
 
 ## Project Structure
@@ -69,7 +69,8 @@ Apache/
 ├── scripts/
 │   └── rpc_proxy.lua        # Main Lua filter script
 ├── test/                    # Test scripts
-├── mock_rpc.py             # Mock RPC server
+├── mock_rpc.lua            # Mock RPC server (Lua)
+├── mock-backend/           # Mock backend image build files
 ├── docker-compose.yml      # Service orchestration
 ├── start.sh                # Quick start script
 ├── stop.sh                 # Stop script

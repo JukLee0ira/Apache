@@ -15,7 +15,7 @@
 | 工具 | 用途 |
 |------|------|
 | `curl` | API 测试 |
-| `python3` | JSON 格式化输出 |
+| `jq` | JSON 格式化输出 |
 | `lsof` | 端口冲突检查 |
 
 ### 快速验证安装
@@ -42,7 +42,7 @@ git --version
 | **Apache** | 2.4.x | Debian Bookworm 版本 |
 | **Lua** | 5.1.x | Apache Lua 模块版本 |
 | **Lua-cjson** | 2.1.x | JSON 编解码库 |
-| **Python (Mock Server)** | 3.11-slim | 后端 Mock RPC 服务 |
+| **Lua (Mock Server)** | 5.1.x + LuaSocket | 后端 Mock RPC 服务 |
 | **Debian** | bookworm-slim | 基础镜像 |
 
 ### 版本兼容性说明
@@ -222,7 +222,7 @@ curl -i -X POST http://localhost:8888/rpc \
 # 预期: HTTP 403 Forbidden
 
 # 4. 查看拦截记录
-curl http://localhost:8545/blocked | python3 -m json.tool
+curl http://localhost:8545/blocked | jq .
 ```
 
 ---
@@ -318,10 +318,10 @@ docker exec -it apache-rpc-proxy curl http://localhost:80/health
 
 ```bash
 # 查看拦截统计
-curl http://localhost:8545/stats | python3 -m json.tool
+curl http://localhost:8545/stats | jq .
 
 # 查看所有拦截记录
-curl http://localhost:8545/blocked | python3 -m json.tool
+curl http://localhost:8545/blocked | jq .
 ```
 
 ### 3. 监控告警
@@ -360,7 +360,7 @@ docker-compose up -d
 
 - `apache/Dockerfile` - 基础镜像版本
 - `docker-compose.yml` - 服务镜像版本
-- `requirements.txt` (如存在) - Python 依赖版本
+- `mock-backend/Dockerfile` - Mock 后端依赖版本
 
 ---
 

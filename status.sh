@@ -15,7 +15,16 @@ curl -s http://localhost:8888/health && echo " [OK]" || echo " [FAILED]"
 
 echo ""
 echo "统计信息:"
-curl -s http://localhost:8545/stats 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "无法获取统计信息"
+stats=$(curl -s http://localhost:8545/stats 2>/dev/null)
+if [ -n "$stats" ]; then
+    if command -v jq >/dev/null 2>&1; then
+        echo "$stats" | jq . 2>/dev/null || echo "$stats"
+    else
+        echo "$stats"
+    fi
+else
+    echo "无法获取统计信息"
+fi
 
 echo ""
 echo "最近日志 (Apache):"

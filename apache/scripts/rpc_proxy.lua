@@ -53,32 +53,169 @@ function check_method(method)
     return false
 end
 
--- Decode and validate transaction data
--- Returns true if data is valid or no data, false if blocked
-function validate_tx_data(data)
-    if not data or data == "" then
-        return true
+-- ============ RLP Decoder for eth_sendRawTransaction ============
+
+local function hex_to_bytes(hex)
+    if hex:sub(1, 2) == "0x" or hex:sub(1, 2) == "0X" then hex = hex:sub(3) end
+    local bytes = {}
+    for i = 1, #hex, 2 do
+        local v = tonumber(hex:sub(i, i + 1), 16)
+        if not v then return nil end
+        bytes[#bytes + 1] = v
+    end
+    return bytes
+end
+
+local function read_uint(bytes, pos, len)
+    if len <= 0 then return nil end
+    if pos + len - 1 > #bytes then return nil end
+    local n = 0
+    for i = pos, pos + len - 1 do n = n * 256 + (bytes[i] or 0) end
+    return n
+end
+
+local function rlp_decode_item(bytes, pos)
+    local first = bytes[pos]
+    if not first then return nil, pos end
+
+    if first < 0x80 then
+        return {_t = "bytes", d = {first}}, pos + 1
+
+    elseif first <= 0xb7 then
+        local len = first - 0x80
+        if pos + len > #bytes then return nil, pos end
+        local d = {}
+        for i = pos + 1, pos + len do d[#d + 1] = bytes[i] end
+        return {_t = "bytes", d = d}, pos + 1 + len
+
+    elseif first <= 0xbf then
+        local lb = first - 0xb7
+        if pos + lb > #bytes then return nil, pos end
+        local len = read_uint(bytes, pos + 1, lb)
+        if not len then return nil, pos end
+        local data_start = pos + 1 + lb
+        local data_end = data_start + len - 1
+        if data_end > #bytes then return nil, pos end
+        local d = {}
+        for i = data_start, data_end do d[#d + 1] = bytes[i] end
+        return {_t = "bytes", d = d}, pos + 1 + lb + len
+
+    elseif first <= 0xf7 then
+        local total_len = first - 0xc0
+        if pos + total_len > #bytes then return nil, pos end
+        local items, cur = {}, pos + 1
+        local end_pos = pos + 1 + total_len
+        while cur < end_pos do
+            local item, np = rlp_decode_item(bytes, cur)
+            if not item or not np or np <= cur or np > end_pos then return nil, pos end
+            items[#items + 1] = item; cur = np
+        end
+        if cur ~= end_pos then return nil, pos end
+        return {_t = "list", items = items}, end_pos
+
+    else
+        local lb = first - 0xf7
+        if pos + lb > #bytes then return nil, pos end
+        local total_len = read_uint(bytes, pos + 1, lb)
+        if not total_len then return nil, pos end
+        local items, cur = {}, pos + 1 + lb
+        local end_pos = cur + total_len
+        if end_pos - 1 > #bytes then return nil, pos end
+        while cur < end_pos do
+            local item, np = rlp_decode_item(bytes, cur)
+            if not item or not np or np <= cur or np > end_pos then return nil, pos end
+            items[#items + 1] = item; cur = np
+        end
+        if cur ~= end_pos then return nil, pos end
+        return {_t = "list", items = items}, end_pos
+    end
+end
+
+local function bytes_to_hex_str(d)
+    if not d or #d == 0 then return "0x" end
+    local s = "0x"
+    for _, b in ipairs(d) do s = s .. string.format("%02x", b) end
+    return s
+end
+
+-- Parse eth_sendRawTransaction hex param.
+-- Supports legacy (type 0), EIP-2930 (type 1), EIP-1559 (type 2).
+-- Returns {to, data, tx_type} or nil, err.
+-- NOTE: `from` address recovery requires secp256k1 ecrecover and is not
+-- implemented in pure Lua. Validate `from` via an off-chain service if needed.
+function parse_raw_transaction(raw_hex)
+    if type(raw_hex) ~= "string" then
+        return nil, "param must be a hex string"
+    end
+    if raw_hex == "" then
+        return nil, "empty raw transaction"
+    end
+    if not raw_hex:match("^0[xX][0-9a-fA-F]+$") then
+        return nil, "invalid hex encoding"
+    end
+    local payload = raw_hex:sub(3)
+    if #payload % 2 ~= 0 then
+        return nil, "hex length must be even"
+    end
+    local bytes = hex_to_bytes(raw_hex)
+    if not bytes or #bytes == 0 then
+        return nil, "invalid hex encoding"
     end
 
-    -- Basic validation: check if data is valid hex and has minimum length
-    -- Must be at least 4 bytes (function selector) + some params
-    if #data < 10 then
-        return true -- Empty or very short data is acceptable
+    local tx_type, start_pos = 0, 1
+    if bytes[1] < 0x80 then
+        if bytes[1] == 0x01 then
+            tx_type = 1
+            start_pos = 2
+        elseif bytes[1] == 0x02 then
+            tx_type = 2
+            start_pos = 2
+        else
+            return nil, "unsupported transaction type"
+        end
     end
 
-    -- Check if data starts with 0x
-    if data:sub(1, 2) ~= "0x" then
-        return true -- No 0x prefix, skip validation
+    local decoded, end_pos = rlp_decode_item(bytes, start_pos)
+    if not decoded or decoded._t ~= "list" then
+        return nil, "RLP decode failed: not a transaction list"
+    end
+    if not end_pos or end_pos ~= #bytes + 1 then
+        return nil, "RLP decode failed: trailing or truncated bytes"
     end
 
-    -- Validate hex characters
-    local hex_part = data:sub(3)
-    if not hex_part:match("^[0-9a-fA-F]+$") then
-        return true -- Invalid hex, skip validation
+    -- `to` field index (1-based):
+    -- legacy (0): [nonce, gasPrice, gasLimit, TO, value, data, v, r, s]
+    -- EIP-2930 (1): [chainId, nonce, gasPrice, gasLimit, TO, value, data, ...]
+    -- EIP-1559 (2): [chainId, nonce, maxPriorityFee, maxFee, gasLimit, TO, value, data, ...]
+    local to_idx, data_idx
+    if tx_type == 0 then
+        to_idx = 4; data_idx = 6
+    elseif tx_type == 1 then
+        to_idx = 5; data_idx = 7
+    else
+        to_idx = 6; data_idx = 8
     end
 
-    -- Data looks valid with at least 4-byte selector
-    return true
+    local to_item   = decoded.items[to_idx]
+    local data_item = decoded.items[data_idx]
+    if not to_item or to_item._t ~= "bytes" then
+        return nil, "missing to field"
+    end
+    if #to_item.d ~= 20 then
+        return nil, "invalid to field length"
+    end
+
+    local to_addr = bytes_to_hex_str(to_item.d)
+
+    local tx_data = nil
+    if not data_item or data_item._t ~= "bytes" then
+        return nil, "missing data field"
+    end
+    if data_item and data_item._t == "bytes" then
+        tx_data = bytes_to_hex_str(data_item.d)
+    end
+
+    return {to = to_addr, data = tx_data, tx_type = tx_type}
 end
 
 -- Validate single request
@@ -121,25 +258,20 @@ function validate(rpc)
             end
         end
 
-    elseif method == "sign_rawTransaction" or method == "eth_sendRawTransaction" then
-        local tx = params[1]
-        if tx then
-            -- Validate from address (must be in whitelist)
-            if tx.from then
-                if not check_address(tx.from) then
-                    return false, "From address not allowed: " .. tx.from
-                end
-            end
-            -- Validate to address (must be in whitelist)
-            if tx.to and not check_address(tx.to) then
-                return false, "To address not allowed: " .. tx.to
-            end
-            -- Validate data field
-            if tx.data then
-                if not validate_tx_data(tx.data) then
-                    return false, "Transaction data not allowed"
-                end
-            end
+    elseif method == "eth_sendRawTransaction" then
+        local raw_hex = params[1]
+        if not raw_hex then
+            return false, "eth_sendRawTransaction requires a hex-encoded signed transaction param"
+        end
+        local tx, err = parse_raw_transaction(raw_hex)
+        if not tx then
+            return false, "Invalid raw transaction: " .. (err or "decode error")
+        end
+        if not tx.to then
+            return false, "Invalid raw transaction: missing to address"
+        end
+        if not check_address(tx.to) then
+            return false, "To address not allowed: " .. tx.to
         end
     end
 
