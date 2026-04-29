@@ -1,8 +1,8 @@
 #!/bin/bash
-# Ethereum RPC Filter - 停止脚本
+# Ethereum RPC Filter - Stop Script
 
-echo "正在停止服务..."
+echo "Stopping services..."
 
 docker-compose down
 
-echo "服务已停止"
+echo "Services stopped."

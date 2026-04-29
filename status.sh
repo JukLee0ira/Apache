@@ -1,20 +1,20 @@
 #!/bin/bash
-# Ethereum RPC Filter - 状态检查脚本
+# Ethereum RPC Filter - Status Check Script
 
 echo "=========================================="
-echo "  Ethereum RPC Filter - 服务状态"
+echo "  Ethereum RPC Filter - Service Status"
 echo "=========================================="
 echo ""
 
-echo "容器状态:"
+echo "Container status:"
 docker-compose ps
 
 echo ""
-echo "健康检查:"
+echo "Health check:"
 curl -s http://localhost:8888/health && echo " [OK]" || echo " [FAILED]"
 
 echo ""
-echo "统计信息:"
+echo "Statistics:"
 stats=$(curl -s http://localhost:8545/stats 2>/dev/null)
 if [ -n "$stats" ]; then
     if command -v jq >/dev/null 2>&1; then
@@ -23,13 +23,13 @@ if [ -n "$stats" ]; then
         echo "$stats"
     fi
 else
-    echo "无法获取统计信息"
+    echo "Unable to fetch statistics"
 fi
 
 echo ""
-echo "最近日志 (Apache):"
+echo "Recent logs (Apache):"
 docker logs apache-rpc-proxy --tail 5 2>&1 | sed 's/^/  /'
 
 echo ""
-echo "最近日志 (Mock):"
+echo "Recent logs (Mock):"
 docker logs ethereum-rpc-mock --tail 5 2>&1 | sed 's/^/  /'

@@ -1,386 +1,364 @@
-# 部署指南 - Ethereum RPC Filter
+# Deployment Guide - Ethereum RPC Filter
 
-## 环境要求
+## Requirements
 
-### 必需软件
+### Required software
 
-| 软件 | 版本 | 用途 |
+| Software | Version | Purpose |
 |------|------|------|
-| **Docker** | 20.10+ | 容器运行时 |
-| **Docker Compose** | 1.29+ | 服务编排 |
-| **Git** | 2.0+ | 版本控制 |
+| **Docker** | 20.10+ | Container runtime |
+| **Docker Compose** | 1.29+ | Service orchestration |
+| **Git** | 2.0+ | Version control |
 
-### 可选工具
+### Optional tools
 
-| 工具 | 用途 |
+| Tool | Purpose |
 |------|------|
-| `curl` | API 测试 |
-| `jq` | JSON 格式化输出 |
-| `lsof` | 端口冲突检查 |
+| `curl` | API testing |
+| `jq` | JSON formatting |
+| `lsof` | Port conflict checks |
 
-### 快速验证安装
+### Quick install verification
 
 ```bash
 docker --version
-# 预期: Docker version 20.10.x
+# Expected: Docker version 20.10.x
 
 docker-compose --version
-# 预期: Docker Compose version 1.29.x
+# Expected: Docker Compose version 1.29.x
 
 git --version
-# 预期: git version 2.x.x
+# Expected: git version 2.x.x
 ```
 
 ---
 
-## 环境版本说明
+## Version details
 
-### 当前项目使用的版本
+### Versions used by this project
 
-| 组件 | 版本 | 说明 |
+| Component | Version | Notes |
 |------|------|------|
-| **Apache** | 2.4.x | Debian Bookworm 版本 |
-| **Lua** | 5.1.x | Apache Lua 模块版本 |
-| **Lua-cjson** | 2.1.x | JSON 编解码库 |
-| **Lua (Mock Server)** | 5.1.x + LuaSocket | 后端 Mock RPC 服务 |
-| **Debian** | bookworm-slim | 基础镜像 |
+| **Apache** | 2.4.x | Debian Bookworm build |
+| **Lua** | 5.1.x | Apache Lua module version |
+| **Lua-cjson** | 2.1.x | JSON encode/decode library |
+| **Lua (Mock Server)** | 5.1.x + LuaSocket | Mock RPC backend |
+| **Debian** | bookworm-slim | Base image |
 
-### 版本兼容性说明
+### Compatibility notes
 
-- **Lua 5.1** 是 Apache `mod_lua` 模块官方支持的版本
-- 脚本使用 Lua 5.1 语法，不支持 Lua 5.2+ 的新特性
-- Apache 2.4.x 模块路径可能与旧版本不同，本配置使用 Debian 标准路径
+- **Lua 5.1** is the officially supported version for Apache `mod_lua`.
+- Scripts use Lua 5.1 syntax and do not rely on Lua 5.2+ features.
+- Apache module paths may differ by distro and version; this project uses Debian-standard paths.
 
 ---
 
-## 一、在 GitHub 仓库中下载代码
+## 1) Get the code from GitHub
 
-### 方法 1: Git Clone（推荐）
+### Method 1: Git clone (recommended)
 
 ```bash
-# 克隆仓库
 git clone https://github.com/JukLee0ira/Apache.git
-
-# 进入项目目录
 cd Apache
 ```
 
-### 方法 2: 下载 ZIP
+### Method 2: Download ZIP
 
-1. 访问: https://github.com/JukLee0ira/Apache
-2. 点击绿色 "Code" 按钮
-3. 选择 "Download ZIP"
-4. 解压到本地目录
+1. Open [https://github.com/JukLee0ira/Apache](https://github.com/JukLee0ira/Apache)
+2. Click the green **Code** button
+3. Select **Download ZIP**
+4. Extract it locally
 
 ---
 
-## 二、快速启动（3 步完成）
+## 2) Quick start (3 steps)
 
-### 步骤 1: 一键启动
+### Step 1: Start services
 
 ```bash
 cd /path/to/Apache
 
-# 方式 A: 使用启动脚本（推荐）
+# Option A: use startup script (recommended)
 ./start.sh
 
-# 方式 B: 直接使用 Docker Compose
+# Option B: run Docker Compose directly
 docker-compose up -d
 ```
 
-### 步骤 2: 验证启动状态
+### Step 2: Verify service status
 
 ```bash
-# 使用状态检查脚本
+# Use status script
 ./status.sh
 
-# 或手动检查
+# Or check manually
 curl http://localhost:8888/health
-# 预期输出: OK
+# Expected output: OK
 ```
 
-### 步骤 3: 运行测试
+### Step 3: Run tests
 
 ```bash
-# 完���测试套件（25 项测试）
+# Full test suite (25 tests)
 ./test/comprehensive_test.sh
 
-# 或单独测试
+# Or single manual test
 curl -X POST http://localhost:8888/rpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
-**预期成功输出:**
+Expected success output:
+
 ```json
 {"jsonrpc": "2.0", "id": 1, "result": "0x10d4f"}
 ```
 
 ---
 
-## 三、配置文件说明
+## 3) Configuration files
 
-### 核心配置文件
+### Core files
 
-| 文件 | 说明 | 修改后是否需重启 |
+| File | Description | Restart required |
 |------|------|----------------|
-| `config/whitelist.json` | 白名单配置（地址、方法） | **是** - 需重启 Apache |
-| `apache/conf/sites-enabled/rpc-proxy.conf` | Apache 虚拟主机配置 | **是** - 需重建镜像 |
-| `scripts/rpc_proxy.lua` | 过滤逻辑脚本 | **是** - 需重启 Apache |
+| `config/whitelist.json` | Whitelist entries (addresses and methods) | **Yes** - restart Apache |
+| `apache/conf/sites-enabled/rpc-proxy.conf` | Apache virtual host config | **Yes** - rebuild image |
+| `scripts/rpc_proxy.lua` | Request filtering logic | **Yes** - restart Apache |
 
-### 修改白名单配置
+### Update whitelist config
 
 ```bash
-# 编辑配置文件
 vim config/whitelist.json
-
-# 重启服务使配置生效
 ./restart.sh
-# 或: docker-compose restart apache-proxy
+# or: docker-compose restart apache-proxy
 ```
 
 ---
 
-## 四、服务管理命令
+## 4) Service management commands
 
-### 启动服务
+### Start services
 ```bash
-./start.sh                    # 推荐，带健康检查
-docker-compose up -d          # Docker Compose 方式
+./start.sh
+docker-compose up -d
 ```
 
-### 停止服务
+### Stop services
 ```bash
 ./stop.sh
 docker-compose down
 ```
 
-### 重启服务
+### Restart services
 ```bash
-./restart.sh                  # 推荐，先停止再启动
-docker-compose restart apache-proxy   # 仅重启代理
-docker-compose restart ethereum-rpc-mock  # 仅重启 Mock 服务
+./restart.sh
+docker-compose restart apache-proxy
+docker-compose restart ethereum-rpc-mock
 ```
 
-### 查看状态
+### Check status
 ```bash
-./status.sh                   # 推荐，显示状态、健康检查、日志
-docker-compose ps             # 容器状态
-curl http://localhost:8888/health  # 健康检查端点
+./status.sh
+docker-compose ps
+curl http://localhost:8888/health
 ```
 
-### 查看日志
+### View logs
 ```bash
-# 实时查看代理日志
 docker logs -f apache-rpc-proxy
-
-# 实时查看 Mock 日志
 docker logs -f ethereum-rpc-mock
-
-# 查看最近 N 行
 docker logs --tail 100 apache-rpc-proxy
 ```
 
 ---
 
-## 五、测试验证
+## 5) Test verification
 
-### 快速验证测试（5 分钟）
+### Quick validation (about 5 minutes)
 
-运行完整测试套件:
+Run the full suite:
+
 ```bash
 ./test/comprehensive_test.sh
 ```
 
-**测试项包括:**
-- ✓ 服务健康检查
-- ✓ 白名单方法测试（4 个方法）
-- ✓ 白名单地址测试（2 个地址）
-- ✓ 非白名单方法拦截（4 个方法）
-- ✓ 非白名单地址拦截（2 个地址）
-- ✓ 响应内容验证
-- ✓ 错误处理测试
-- ✓ 日志一致性检查
+Coverage includes:
+- Service health checks
+- Whitelisted method checks
+- Whitelisted address checks
+- Non-whitelisted method blocking
+- Non-whitelisted address blocking
+- Response format validation
+- Error handling checks
+- Log consistency checks
 
-预期输出: `All passed (25/25)` 或所有测试项显示 `[PASS]`
+Expected result: `All passed (25/25)` or each item marked `[PASS]`.
 
-### 手动测试命令
+### Manual test commands
 
 ```bash
-# 1. 健康检查
+# 1) Health check
 curl http://localhost:8888/health
 
-# 2. 白名单方法测试（应通过）
+# 2) Whitelisted method (should pass)
 curl -X POST http://localhost:8888/rpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
-# 3. 非白名单方法测试（应被拦截）
+# 3) Non-whitelisted method (should be blocked)
 curl -i -X POST http://localhost:8888/rpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"personal_sign","params":["msg","0x1234"],"id":1}'
-# 预期: HTTP 403 Forbidden
+# Expected: HTTP 403 Forbidden
 
-# 4. 查看拦截记录
+# 4) Check blocked records
 curl http://localhost:8545/blocked | jq .
 ```
 
 ---
 
-## 六、故障排查
+## 6) Troubleshooting
 
-### 端口冲突
+### Port conflict
 
-**问题:** 端口 8888 或 8545 已被占用
+Problem: Port `8888` or `8545` is already in use.
 
-**排查:**
 ```bash
-lsof -i :8888    # 查看 8888 端口占用
-lsof -i :8545    # 查看 8545 端口占用
+lsof -i :8888
+lsof -i :8545
 ```
 
-**解决:**
-```bash
-# 方法 1: 停止占用端口的进程
-kill <PID>
+Fix options:
+- Stop the process using the port: `kill <PID>`
+- Adjust port mappings in `docker-compose.yml`
 
-# 方法 2: 修改 docker-compose.yml 的端口映射
-# 将 "8888:80" 改为 "9999:80"
-# 将 "8545:8545" 改为 "9996:8545"
+### Docker build failure
+
+Problem: `docker-compose up` fails during build/start.
+
+```bash
+docker-compose build apache-proxy
+docker logs apache-rpc-proxy
 ```
 
-### Docker 镜像构建失败
+Common causes:
+- Network or registry configuration issue
+- Package source issue during image build
 
-**问题:** `docker-compose up` 报错
+### HTTP 500 response
 
-**排查:**
 ```bash
-docker-compose build apache-proxy  # 单独构建 Apache 镜像
-docker logs apache-rpc-proxy       # 查看错误日志
-```
-
-**常见原因:**
-- 网络问题: Docker 镜像源配置错误
-- 依赖问题: APT 源不可用（修改 Dockerfile 中的源）
-
-### 请求返回 500 错误
-
-**排查步骤:**
-```bash
-# 1. 查看 Apache 错误日志
+# 1) Apache error logs
 docker logs apache-rpc-proxy --tail 50 | grep "\[error\]"
 
-# 2. 检查 Lua 脚本语法
+# 2) Lua script syntax check
 docker exec -it apache-rpc-proxy lua -e "dofile('/usr/local/apache2/scripts/rpc_proxy.lua')"
 
-# 3. 检查配置文件
+# 3) Verify config file inside container
 docker exec -it apache-rpc-proxy cat /etc/apache2/config/whitelist.json
 ```
 
-### 修改配置后不生效
+### Config changes not applied
 
-**问题:** 修改了 `whitelist.json` 但拦截规则未更新
+Problem: `whitelist.json` was changed but rules did not update.
 
-**解决:** 必须重启 Apache 服务
+Fix:
+
 ```bash
 docker-compose restart apache-proxy
-# 或
+# or
 ./restart.sh
 ```
 
-### 容器无法访问
+### Container unreachable
 
-**问题:** `curl: (7) Failed to connect`
+Problem: `curl: (7) Failed to connect`.
 
-**排查:**
 ```bash
-# 1. 检查容器是否运行
+# 1) Check container status
 docker-compose ps
 
-# 2. 查看容器日志
+# 2) Check logs
 docker logs apache-rpc-proxy
 
-# 3. 进入容器内部测试
+# 3) Test from inside container
 docker exec -it apache-rpc-proxy curl http://localhost:80/health
 ```
 
 ---
 
-## 七、生产环境部署建议
+## 7) Production recommendations
 
-### 1. 白名单配置
+### Whitelist management
+- Review `config/whitelist.json` regularly.
+- Follow least-privilege policy.
+- Prefer explicit addresses over wildcards.
 
-- 定期审核 `config/whitelist.json`
-- 最小权限原则: 只添加必要的方法和地址
-- 使用具体地址而非通配符
-
-### 2. 日志管理
+### Logging
 
 ```bash
-# 查看拦截统计
 curl http://localhost:8545/stats | jq .
-
-# 查看所有拦截记录
 curl http://localhost:8545/blocked | jq .
 ```
 
-### 3. 监控告警
+### Monitoring
 
-建议监控指标:
-- 容器运行状态
-- HTTP 状态码分布（200 vs 403）
-- Mock 服务的 `blocked_count` 增长
+Track these metrics:
+- Container health and uptime
+- HTTP status code distribution (`200` vs `403`)
+- Growth of `blocked_count` on the mock service
 
-### 4. 安全加固
-
-- 配置 HTTPS (修改 `rpc-proxy.conf`)
-- 限制来源 IP（在 Apache 配置中添加 `Require ip`）
-- 启用 HTTP 基础认证（如需）
+### Security hardening
+- Enable HTTPS in `rpc-proxy.conf`
+- Restrict source IPs with Apache `Require ip`
+- Enable basic auth if needed
 
 ---
 
-## 八、版本更新
+## 8) Updates
 
-### 更新步骤
+### Upgrade steps
 
 ```bash
-# 1. 拉取最新代码
+# 1) Pull latest code
 git pull origin main
 
-# 2. 重建镜像
+# 2) Rebuild image
 docker-compose build apache-proxy
 
-# 3. 重启服务
+# 3) Restart services
 docker-compose up -d
 ```
 
-### 版本说明
+### Version notes
 
-当前项目使用固定版本，确保环境一致性。如需升级版本，请修改相关文件:
+This project pins versions for environment consistency. If you need upgrades, update:
 
-- `apache/Dockerfile` - 基础镜像版本
-- `docker-compose.yml` - 服务镜像版本
-- `mock-backend/Dockerfile` - Mock 后端依赖版本
+- `apache/Dockerfile` (base image)
+- `docker-compose.yml` (service images/config)
+- `mock-backend/Dockerfile` (mock backend dependencies)
 
 ---
 
-## 九、常见问题 FAQ
+## 9) FAQ
 
-### Q1: 为什么使用 Lua 5.1 而不是最新版？
+### Q1: Why Lua 5.1 instead of the latest Lua?
 
-A: Apache `mod_lua` 模块目前仅支持 Lua 5.1 API，无法使用 Lua 5.2+ 的新特性。
+A: Apache `mod_lua` currently targets the Lua 5.1 API.
 
-### Q2: 如何添加新的白名单地址？
+### Q2: How do I add a new whitelisted address?
 
-A: 编辑 `config/whitelist.json`，在 `allowed_addresses` 数组添加地址，然后重启 Apache 服务。
+A: Edit `config/whitelist.json`, add to `allowed_addresses`, then restart Apache.
 
-### Q3: Mock 服务和真实节点有什么区别？
+### Q3: What is the difference between the mock service and a real node?
 
-A: Mock 服务仅返回模拟数据用于测试和演示，不连接真实区块链。生产环境应将 `http://rpc-backend:8545` 替换为真实的 Ethereum 节点地址。
+A: The mock service returns simulated data for testing and demos. For production, replace `http://rpc-backend:8545` with a real Ethereum node endpoint.
 
-### Q4: 如何将流量转发到真实节点？
+### Q4: How do I forward traffic to a real node?
 
-A: 修改 `scripts/rpc_proxy.lua` 第 233 行的后端地址:
+A: Update the backend URL in `scripts/rpc_proxy.lua`:
+
 ```lua
 local cmd = string.format(
     "curl -s -X POST -H 'Content-Type: application/json' --data '%s' http://YOUR_REAL_NODE:8545/",
@@ -388,19 +366,19 @@ local cmd = string.format(
 )
 ```
 
-### Q5: 日志存储在哪里？
+### Q5: Where are logs stored?
 
-A: Docker 容器日志默认存储在 Docker 引擎的日志驱动中。如需持久化，可在 `docker-compose.yml` 中配置 volume 挂载。
-
----
-
-## 十、获取帮助
-
-- 查看完整文档: `README.md`
-- 运行测试套件: `./test/comprehensive_test.sh`
-- 查看容器日志: `docker logs -f apache-rpc-proxy`
-- GitHub Issues: https://github.com/JukLee0ira/Apache/issues
+A: By default, Docker logs are managed by the Docker logging driver. Configure volumes or logging drivers in `docker-compose.yml` if persistence is required.
 
 ---
 
-**部署完成!** 现在您可以开始使用 Ethereum RPC Filter 了。
+## 10) Getting help
+
+- Full project docs: `README.md`
+- Run test suite: `./test/comprehensive_test.sh`
+- View proxy logs: `docker logs -f apache-rpc-proxy`
+- GitHub issues: [https://github.com/JukLee0ira/Apache/issues](https://github.com/JukLee0ira/Apache/issues)
+
+---
+
+**Deployment complete!** You can now use Ethereum RPC Filter.
