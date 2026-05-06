@@ -1,11 +1,17 @@
 #!/bin/bash
 
 # view_blocked.sh - View blocked records (from Mock Server)
+# Supports both Docker and Native (systemd) deployment modes
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+
+# Detect deployment mode
+check_docker_mode() {
+    command -v docker &> /dev/null && docker ps &> /dev/null 2>&1
+}
 
 echo "=========================================="
 echo "Blocked Request Record Query"
@@ -14,6 +20,11 @@ echo ""
 
 if ! curl -s http://localhost:8545/health | grep -q OK; then
     echo -e "${RED}X Mock Server not running${NC}"
+    if check_docker_mode; then
+        echo "Start with: docker-compose up -d"
+    else
+        echo "Start with: sudo systemctl start ethereum-rpc-mock"
+    fi
     exit 1
 fi
 
@@ -46,16 +57,33 @@ else
 fi
 
 echo ""
-echo "Detailed Apache blocked logs:"
-echo "-------------------------------------------"
-docker logs apache-rpc-proxy 2>&1 | grep "\[BLOCKED\]" | tail -5 | sed 's/^/  /' \
-    || echo "  (no blocked logs yet)"
 
-echo ""
-echo "Real-time monitoring commands:"
-echo "  # Monitor Apache blocking"
-echo "  docker logs apache-rpc-proxy -f | grep BLOCKED"
-echo ""
-echo "  # Monitor backend reception"
-echo "  docker logs ethereum-rpc-mock -f | grep RECEIVED"
-echo ""
+if check_docker_mode; then
+    echo "Detailed Apache blocked logs:"
+    echo "-------------------------------------------"
+    docker logs apache-rpc-proxy 2>&1 | grep "\[BLOCKED\]" | tail -5 | sed 's/^/  /' \
+        || echo "  (no blocked logs yet)"
+
+    echo ""
+    echo "Real-time monitoring commands:"
+    echo "  # Monitor Apache blocking"
+    echo "  docker logs apache-rpc-proxy -f | grep BLOCKED"
+    echo ""
+    echo "  # Monitor backend reception"
+    echo "  docker logs ethereum-rpc-mock -f | grep RECEIVED"
+    echo ""
+else
+    echo "Detailed Apache blocked logs:"
+    echo "-------------------------------------------"
+    journalctl -u httpd --since "10 minutes ago" --no-pager 2>/dev/null | grep -iE "blocked|403" | tail -5 | sed 's/^/  /' \
+        || echo "  (no blocked logs yet)"
+
+    echo ""
+    echo "Real-time monitoring commands:"
+    echo "  # Monitor Apache logs"
+    echo "  journalctl -u httpd -f"
+    echo ""
+    echo "  # Monitor backend logs"
+    echo "  journalctl -u ethereum-rpc-mock -f"
+    echo ""
+fi

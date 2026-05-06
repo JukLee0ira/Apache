@@ -1,0 +1,22 @@
+[Unit]
+Description=Ethereum RPC Apache Proxy
+Documentation=https://github.com/JukLee0ira/Apache
+After=network.target ethereum-rpc-mock.service
+Wants=ethereum-rpc-mock.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/httpd -t -f /etc/httpd/conf/httpd.conf
+ExecStart=/usr/sbin/httpd -D FOREGROUND -f /etc/httpd/conf/httpd.conf
+ExecReload=/usr/sbin/httpd -k graceful -f /etc/httpd/conf/httpd.conf
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+NoNewPrivileges=true
+
+# Allow Apache to connect to backend
+ExecStartPost=/usr/sbin/semanage port -a -t http_port_t -p tcp 8545 2>/dev/null || true
+
+[Install]
+WantedBy=multi-user.target

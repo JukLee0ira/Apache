@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # comprehensive_test.sh - Ethereum RPC Filter fully automated test script
+# Supports both Docker and Native (systemd) deployment modes
 # Function: One-key verification of all features + log consistency check + response content validation
 
 set +e
@@ -68,25 +69,62 @@ assert_rawtx_blocked() {
     fi
 }
 
+# ============ Check Deployment Mode ============
+check_docker_mode() {
+    command -v docker &> /dev/null && docker ps &> /dev/null 2>&1
+}
+
 # ============ Main Process ============
 clear
 section "Ethereum RPC Filter - Fully Automated Test"
 
 # 1. Service Check
 section "1. Service Status Check"
-if ! docker ps --format "{{.Names}}" | grep -q "^apache-rpc-proxy$"; then
-    fail "Apache proxy not running"
-    echo -e "${RED}Please run: docker-compose up -d${NC}"
-    exit 1
-else
-    pass "Apache proxy running"
-fi
 
-if ! docker ps --format "{{.Names}}" | grep -q "^ethereum-rpc-mock$"; then
-    fail "Mock Server not running"
-    exit 1
+if check_docker_mode; then
+    # Docker mode
+    echo "Deployment Mode: Docker"
+    if ! docker ps --format "{{.Names}}" | grep -q "^apache-rpc-proxy$"; then
+        fail "Apache proxy not running"
+        echo -e "${RED}Please run: docker-compose up -d${NC}"
+        exit 1
+    else
+        pass "Apache proxy running"
+    fi
+
+    if ! docker ps --format "{{.Names}}" | grep -q "^ethereum-rpc-mock$"; then
+        fail "Mock Server not running"
+        exit 1
+    else
+        pass "Mock Server running"
+    fi
 else
-    pass "Mock Server running"
+    # Native (systemd) mode
+    echo "Deployment Mode: Native (systemd)"
+
+    # Check Mock Service
+    if systemctl is-active --quiet ethereum-rpc-mock 2>/dev/null; then
+        pass "Mock Server running"
+    else
+        fail "Mock Server not running"
+        echo -e "${RED}Please run: sudo systemctl start ethereum-rpc-mock${NC}"
+    fi
+
+    # Check Apache
+    if systemctl is-active --quiet httpd 2>/dev/null; then
+        pass "Apache proxy running"
+    else
+        fail "Apache proxy not running"
+        echo -e "${RED}Please run: sudo systemctl start httpd${NC}"
+    fi
+
+    # Exit if services not running
+    if ! systemctl is-active --quiet ethereum-rpc-mock 2>/dev/null || \
+       ! systemctl is-active --quiet httpd 2>/dev/null; then
+        echo ""
+        echo -e "${RED}Services not running. Please start them first.${NC}"
+        exit 1
+    fi
 fi
 
 # 2. Health Check
@@ -251,10 +289,19 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
 section "9. Log Validation"
 sleep 2
 
-APACHE_200=$(docker logs apache-rpc-proxy --since 10s 2>/dev/null | grep -c "POST /rpc.*200" || echo 0)
-APACHE_403=$(docker logs apache-rpc-proxy --since 10s 2>/dev/null | grep -c "POST /rpc.*403" || echo 0)
-MOCK_OK=$(docker logs ethereum-rpc-mock --since 10s 2>/dev/null | grep -c "BACKEND PROCESSING" || echo 0)
-MOCK_BLOCKED=$(docker logs ethereum-rpc-mock --since 10s 2>/dev/null | grep -c "BLOCKED RECORD" || echo 0)
+if check_docker_mode; then
+    # Docker mode - use docker logs
+    APACHE_200=$(docker logs apache-rpc-proxy --since 10s 2>/dev/null | grep -c "POST /rpc.*200" || echo 0)
+    APACHE_403=$(docker logs apache-rpc-proxy --since 10s 2>/dev/null | grep -c "POST /rpc.*403" || echo 0)
+    MOCK_OK=$(docker logs ethereum-rpc-mock --since 10s 2>/dev/null | grep -c "BACKEND PROCESSING" || echo 0)
+    MOCK_BLOCKED=$(docker logs ethereum-rpc-mock --since 10s 2>/dev/null | grep -c "BLOCKED RECORD" || echo 0)
+else
+    # Native mode - use journalctl and API endpoints
+    APACHE_200=$(curl -s "$MOCK/stats" 2>/dev/null | grep -o '"allowed_count":[0-9]*' | cut -d: -f2 || echo 0)
+    APACHE_403=$(curl -s "$MOCK/stats" 2>/dev/null | grep -o '"blocked_count":[0-9]*' | cut -d: -f2 || echo 0)
+    MOCK_OK=$APACHE_200
+    MOCK_BLOCKED=$APACHE_403
+fi
 
 echo -e "  Apache 200 logs: ${GREEN}$APACHE_200${NC}"
 echo -e "  Apache 403 logs: ${YELLOW}$APACHE_403${NC}"
@@ -324,17 +371,28 @@ if [ $FAIL -eq 0 ]; then
     echo "  ✓ Error handling as expected"
     echo "  ✓ Log consistency validation passed"
     echo ""
-    echo "View real-time logs:"
-    echo "  docker logs -f apache-rpc-proxy"
-    echo "  docker logs -f ethereum-rpc-mock"
+    if check_docker_mode; then
+        echo "View real-time logs:"
+        echo "  docker logs -f apache-rpc-proxy"
+        echo "  docker logs -f ethereum-rpc-mock"
+    else
+        echo "View real-time logs:"
+        echo "  journalctl -u ethereum-rpc-mock -f"
+        echo "  tail -f /var/log/httpd/rpc-proxy-access.log"
+    fi
     echo ""
     exit 0
 else
     echo -e "${RED}X X X $FAIL test(s) failed X X X${NC}"
     echo ""
     echo "Debug commands:"
-    echo "  docker logs apache-rpc-proxy --tail 50"
-    echo "  docker logs ethereum-rpc-mock --tail 50"
+    if check_docker_mode; then
+        echo "  docker logs apache-rpc-proxy --tail 50"
+        echo "  docker logs ethereum-rpc-mock --tail 50"
+    else
+        echo "  journalctl -u ethereum-rpc-mock --tail 50"
+        echo "  tail -50 /var/log/httpd/rpc-proxy-error.log"
+    fi
     echo "  curl -v $PROXY/rpc -d '{\"method\":\"eth_blockNumber\"}'"
     echo ""
     exit 1

@@ -2,6 +2,7 @@
 
 # test_verification.sh - Verification script comparing filtering results
 # Shows which requests are blocked and which reach the mock server
+# Supports both Docker and Native (systemd) deployment modes
 
 set -e
 
@@ -13,6 +14,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+
+# Detect deployment mode
+check_docker_mode() {
+    command -v docker &> /dev/null && docker ps &> /dev/null 2>&1
+}
 
 echo "=========================================="
 echo "Filtering Effect Verification Script"
@@ -37,19 +43,23 @@ check_services() {
     fi
 
     if $proxy_ok && $mock_ok; then
-        echo -e "  Apache Proxy: ${GREEN}✓${NC}"
-        echo -e "  Mock Server: ${GREEN}✓${NC}"
+        echo -e "  Apache Proxy: ${GREEN}OK${NC}"
+        echo -e "  Mock Server: ${GREEN}OK${NC}"
         return 0
     else
-        echo -e "  Apache Proxy: $([ $proxy_ok = true ] && echo -e "${GREEN}✓${NC}" || echo -e "${RED}X${NC}")"
-        echo -e "  Mock Server: $([ $mock_ok = true ] && echo -e "${GREEN}✓${NC}" || echo -e "${RED}X${NC}")"
+        echo -e "  Apache Proxy: $([ $proxy_ok = true ] && echo -e "${GREEN}OK${NC}" || echo -e "${RED}FAILED${NC}")"
+        echo -e "  Mock Server: $([ $mock_ok = true ] && echo -e "${GREEN}OK${NC}" || echo -e "${RED}FAILED${NC}")"
         echo ""
-        echo "Please start services first: docker-compose up -d"
+        if check_docker_mode; then
+            echo "Please start services first: docker-compose up -d"
+        else
+            echo "Please start services first: sudo ./start.sh"
+        fi
         exit 1
     fi
 }
 
-# Clean mock server logs (by restarting container)
+# Clean mock server logs (by restarting)
 clean_logs() {
     echo "Clearing Mock Server logs..."
     sleep 1
@@ -65,10 +75,15 @@ send_and_wait() {
 
 # Get recent requests from mock server
 get_mock_requests() {
-    # Extract POST requests from container logs
-    docker logs ethereum-rpc-mock --since 2s --tail 20 2>/dev/null \
-        | grep -A 2 "Received request" \
-        | grep "Method:" || true
+    if check_docker_mode; then
+        # Docker mode - use docker logs
+        docker logs ethereum-rpc-mock --since 2s --tail 20 2>/dev/null \
+            | grep -A 2 "Received request" \
+            | grep "Method:" || true
+    else
+        # Native mode - use API endpoint
+        curl -s "$MOCK_URL/stats" 2>/dev/null || true
+    fi
 }
 
 main() {
@@ -91,11 +106,22 @@ main() {
     echo ""
 
     # Check if eth_blockNumber request reached mock
-    if docker logs ethereum-rpc-mock --since 3s 2>/dev/null | grep -q "eth_blockNumber"; then
-        echo -e "${GREEN}✓ Verification succeeded: Request reached Mock Server${NC}"
-        echo "Explanation: Apache allowed this request through filtering"
+    if check_docker_mode; then
+        if docker logs ethereum-rpc-mock --since 3s 2>/dev/null | grep -q "eth_blockNumber"; then
+            echo -e "${GREEN}OK: Verification succeeded - Request reached Mock Server${NC}"
+            echo "Explanation: Apache allowed this request through filtering"
+        else
+            echo -e "${RED}X: Verification failed - Request did not reach Mock Server${NC}"
+        fi
     else
-        echo -e "${RED}X Verification failed: Request did not reach Mock Server${NC}"
+        stats=$(curl -s "$MOCK_URL/stats" 2>/dev/null)
+        if echo "$stats" | grep -q "eth_blockNumber"; then
+            echo -e "${GREEN}OK: Verification succeeded - Request reached Mock Server${NC}"
+            echo "Explanation: Apache allowed this request through filtering"
+        else
+            echo -e "${YELLOW}?: Unable to verify - check logs manually${NC}"
+            echo "Try: journalctl -u ethereum-rpc-mock --since 10s"
+        fi
     fi
 
     echo ""
@@ -116,12 +142,26 @@ main() {
     get_mock_requests
     echo ""
 
-    if docker logs ethereum-rpc-mock --since 3s 2>/dev/null | grep -q "eth_call"; then
-        echo -e "${RED}X Blocking failed: Request reached Mock Server${NC}"
-        echo "Explanation: Filter rule not working"
+    # Check blocking - the request should NOT have reached mock
+    if check_docker_mode; then
+        if docker logs ethereum-rpc-mock --since 3s 2>/dev/null | grep -q "eth_call"; then
+            echo -e "${RED}X: Blocking failed - Request reached Mock Server${NC}"
+            echo "Explanation: Filter rule not working"
+        else
+            echo -e "${GREEN}OK: Blocking succeeded - Request did not reach Mock Server${NC}"
+            echo "Explanation: Apache rejected this request (returned 403)"
+        fi
     else
-        echo -e "${GREEN}✓ Blocking succeeded: Request did not reach Mock Server${NC}"
-        echo "Explanation: Apache rejected this request (returned 403)"
+        # Native mode - check via API
+        stats=$(curl -s "$MOCK_URL/stats" 2>/dev/null)
+        allowed_before=$(echo "$stats" | grep -o '"allowed_count":[0-9]*' | cut -d: -f2 || echo "0")
+        if [ "$allowed_before" = "1" ]; then
+            echo -e "${GREEN}OK: Blocking succeeded - Only whitelisted request was allowed${NC}"
+            echo "Explanation: Apache rejected the eth_call request (returned 403)"
+        else
+            echo -e "${YELLOW}?: Unable to determine - check logs manually${NC}"
+            echo "Try: journalctl -u ethereum-rpc-mock --since 10s"
+        fi
     fi
 
     echo ""
@@ -130,14 +170,18 @@ main() {
     echo "=========================================="
     echo ""
     echo "Apache error logs (recent 5 lines):"
-    docker logs apache-rpc-proxy 2>/dev/null | grep -E "\[error\]|\[RPC-FILTER\]" | tail -5 || echo "No blocked logs"
+    if check_docker_mode; then
+        docker logs apache-rpc-proxy 2>/dev/null | grep -E "\[error\]|\[RPC-FILTER\]" | tail -5 || echo "No blocked logs"
+    else
+        journalctl -u httpd --since "5 minutes ago" --no-pager 2>/dev/null | grep -iE "error|rpc" | tail -5 || echo "No logs available"
+    fi
     echo ""
 
     echo "=========================================="
     echo "Verification Summary"
     echo "=========================================="
-    echo -e "${GREEN}✓ Blocking works${NC} - Blacklisted requests rejected by Apache with 403"
-    echo -e "${GREEN}✓ Allowing works${NC} - Whitelisted requests reach Mock Server backend"
+    echo -e "${GREEN}OK: Blocking works${NC} - Blacklisted requests rejected by Apache with 403"
+    echo -e "${GREEN}OK: Allowing works${NC} - Whitelisted requests reach Mock Server backend"
 }
 
 main "$@"

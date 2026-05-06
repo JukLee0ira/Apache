@@ -1,384 +1,445 @@
 # Deployment Guide - Ethereum RPC Filter
 
-## Requirements
+## Table of Contents
 
-### Required software
+- [Method A: Docker Deployment](#method-a-docker-deployment)
+- [Method B: Native RHEL/CentOS/Rocky Linux Installation](#method-b-native-rhelcentosrocky-linux-installation)
+- [Configuration](#configuration)
+- [Service Management](#service-management)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Method A: Docker Deployment
+
+### Requirements
 
 | Software | Version | Purpose |
-|------|------|------|
+|----------|---------|---------|
 | **Docker** | 20.10+ | Container runtime |
 | **Docker Compose** | 1.29+ | Service orchestration |
 | **Git** | 2.0+ | Version control |
 
-### Optional tools
-
-| Tool | Purpose |
-|------|------|
-| `curl` | API testing |
-| `jq` | JSON formatting |
-| `lsof` | Port conflict checks |
-
-### Quick install verification
+### Quick Start
 
 ```bash
-docker --version
-# Expected: Docker version 20.10.x
+# 1. Get the code
+git clone https://github.com/JukLee0ira/Apache.git
+cd Apache
 
-docker-compose --version
-# Expected: Docker Compose version 1.29.x
+# 2. Start services
+./start.sh
 
-git --version
-# Expected: git version 2.x.x
+# 3. Verify
+curl http://localhost:8888/health
 ```
 
 ---
 
-## Version details
+## Method B: Native RHEL/CentOS/Rocky Linux Installation
 
-### Versions used by this project
+### Requirements
 
-| Component | Version | Notes |
-|------|------|------|
-| **Apache** | 2.4.x | Debian Bookworm build |
-| **Lua** | 5.1.x | Apache Lua module version |
-| **Lua-cjson** | 2.1.x | JSON encode/decode library |
-| **Lua (Mock Server)** | 5.1.x + LuaSocket | Mock RPC backend |
-| **Debian** | bookworm-slim | Base image |
+| Software | Version | Purpose |
+|----------|---------|---------|
+| **OS** | RHEL/CentOS/Rocky 8+ | Operating system |
+| **Root Access** | Required | Installation requires sudo |
+| **Internet** | Required | To download packages |
 
-### Compatibility notes
+### Supported Distributions
 
-- **Lua 5.1** is the officially supported version for Apache `mod_lua`.
-- Scripts use Lua 5.1 syntax and do not rely on Lua 5.2+ features.
-- Apache module paths may differ by distro and version; this project uses Debian-standard paths.
+- Red Hat Enterprise Linux (RHEL) 8.x / 9.x
+- CentOS Linux 8.x
+- Rocky Linux 8.x / 9.x
+- AlmaLinux 8.x / 9.x
 
----
+### Prerequisites
 
-## 1) Get the code from GitHub
+The installer will automatically detect and install required packages:
 
-### Method 1: Git clone (recommended)
+- Apache HTTPD 2.4
+- Lua 5.1
+- lua-cjson (JSON library)
+- lua-socket (Socket library)
+- Required build tools (gcc, make, git)
+
+### Installation Steps
+
+#### Step 1: Get the Code
 
 ```bash
 git clone https://github.com/JukLee0ira/Apache.git
 cd Apache
 ```
 
-### Method 2: Download ZIP
+#### Step 2: Run the Installer
 
-1. Open [https://github.com/JukLee0ira/Apache](https://github.com/JukLee0ira/Apache)
-2. Click the green **Code** button
-3. Select **Download ZIP**
-4. Extract it locally
+```bash
+sudo ./install-rhel.sh
+```
+
+The installer will:
+
+1. **Detect OS** - Verify RHEL/CentOS/Rocky Linux
+2. **Install Dependencies** - Apache, Lua, build tools
+3. **Compile Lua Extensions** - lua-cjson, lua-socket
+4. **Configure Apache** - Copy config files to /etc/httpd/
+5. **Install Services** - Create systemd unit files
+6. **Configure Firewall** - Open ports 8888 and 8545
+7. **Configure SELinux** - Set required boolean values
+8. **Start Services** - Enable and start all services
+9. **Verify Installation** - Run health checks
+
+#### Step 3: Verify Installation
+
+```bash
+# Check service status
+./status.sh
+
+# Run test suite
+./test/comprehensive_test.sh
+```
+
+### RHEL-Specific Paths
+
+| Item | Docker (Debian) | RHEL Native |
+|------|----------------|-------------|
+| Apache Config | `/etc/apache2/` | `/etc/httpd/` |
+| Lua Scripts | `/usr/local/apache2/scripts/` | `/etc/httpd/lua/` |
+| Whitelist Config | `/etc/apache2/config/whitelist.json` | `/etc/httpd/conf.d/whitelist.json` |
+| Error Log | `/dev/stderr` | `/var/log/httpd/rpc-proxy-error.log` |
+| Access Log | `/dev/stdout` | `/var/log/httpd/rpc-proxy-access.log` |
+| Apache User | `www-data` | `apache` |
+
+### SELinux Configuration
+
+The installer automatically configures SELinux, but if you need to do it manually:
+
+```bash
+# Allow Apache to make network connections
+sudo setsebool -P httpd_can_network_connect 1
+
+# Allow Apache to execute Lua/CGI scripts
+sudo setsebool -P httpd_enable_cgi 1
+
+# Allow Apache to listen on non-standard ports
+sudo semanage port -a -t http_port_t -p tcp 8545
+sudo semanage port -a -t http_port_t -p tcp 8888
+```
+
+### Firewall Configuration
+
+The installer automatically configures firewalld, but if you need to do it manually:
+
+```bash
+# Check firewall status
+sudo systemctl status firewalld
+
+# Open required ports
+sudo firewall-cmd --permanent --add-port=8888/tcp
+sudo firewall-cmd --permanent --add-port=8545/tcp
+sudo firewall-cmd --reload
+
+# List open ports
+sudo firewall-cmd --list-ports
+```
 
 ---
 
-## 2) Quick start (3 steps)
+## Configuration
 
-### Step 1: Start services
+### Whitelist Configuration
 
-```bash
-cd /path/to/Apache
+Edit the whitelist file:
 
-# Option A: use startup script (recommended)
-./start.sh
-
-# Option B: run Docker Compose directly
-docker-compose up -d
-```
-
-### Step 2: Verify service status
-
-```bash
-# Use status script
-./status.sh
-
-# Or check manually
-curl http://localhost:8888/health
-# Expected output: OK
-```
-
-### Step 3: Run tests
-
-```bash
-# Full test suite (25 tests)
-./test/comprehensive_test.sh
-
-# Or single manual test
-curl -X POST http://localhost:8888/rpc \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-```
-
-Expected success output:
+**Docker mode:** `config/whitelist.json`
+**RHEL native mode:** `/etc/httpd/conf.d/whitelist.json`
 
 ```json
-{"jsonrpc": "2.0", "id": 1, "result": "0x10d4f"}
+{
+  "allowed_addresses": [
+    "0x1234567890123456789012345678901234567890",
+    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+  ],
+  "allowed_methods": [
+    "eth_call",
+    "eth_getLogs",
+    "eth_blockNumber",
+    "net_version",
+    "eth_chainId",
+    "eth_getBalance",
+    "eth_sendRawTransaction"
+  ]
+}
 ```
 
----
+### Apply Configuration Changes
 
-## 3) Configuration files
-
-### Core files
-
-| File | Description | Restart required |
-|------|------|----------------|
-| `config/whitelist.json` | Whitelist entries (addresses and methods) | **Yes** - restart Apache |
-| `apache/conf/sites-enabled/rpc-proxy.conf` | Apache virtual host config | **Yes** - rebuild image |
-| `scripts/rpc_proxy.lua` | Request filtering logic | **Yes** - restart Apache |
-
-### Update whitelist config
-
+**Docker mode:**
 ```bash
-vim config/whitelist.json
 ./restart.sh
-# or: docker-compose restart apache-proxy
+```
+
+**RHEL native mode:**
+```bash
+sudo ./restart.sh
+# Or:
+sudo systemctl restart ethereum-rpc-mock httpd
 ```
 
 ---
 
-## 4) Service management commands
+## Service Management
 
-### Start services
+### Docker Mode
+
 ```bash
-./start.sh
+./start.sh           # Start all services
+./stop.sh            # Stop all services
+./restart.sh         # Restart all services
+./status.sh          # Check status
+
+# Direct commands
 docker-compose up -d
-```
-
-### Stop services
-```bash
-./stop.sh
 docker-compose down
+docker-compose restart
 ```
 
-### Restart services
+### RHEL Native Mode
+
 ```bash
-./restart.sh
-docker-compose restart apache-proxy
-docker-compose restart ethereum-rpc-mock
+# Using scripts
+./start.sh           # Start all services
+./stop.sh            # Stop all services
+./restart.sh         # Restart all services
+./status.sh          # Check status
+
+# Direct systemctl commands
+sudo systemctl start ethereum-rpc-mock
+sudo systemctl start httpd
+sudo systemctl stop ethereum-rpc-mock httpd
+sudo systemctl restart ethereum-rpc-mock httpd
+sudo systemctl status ethereum-rpc-mock
+sudo systemctl status httpd
+
+# Enable services to start on boot
+sudo systemctl enable ethereum-rpc-mock
+sudo systemctl enable httpd
 ```
 
-### Check status
-```bash
-./status.sh
-docker-compose ps
-curl http://localhost:8888/health
-```
+### View Logs
 
-### View logs
+**Docker mode:**
 ```bash
 docker logs -f apache-rpc-proxy
 docker logs -f ethereum-rpc-mock
-docker logs --tail 100 apache-rpc-proxy
+```
+
+**RHEL native mode:**
+```bash
+# Systemd journal (all services)
+journalctl -u ethereum-rpc-mock -f
+journalctl -u httpd -f
+
+# Apache logs
+tail -f /var/log/httpd/rpc-proxy-access.log
+tail -f /var/log/httpd/rpc-proxy-error.log
 ```
 
 ---
 
-## 5) Test verification
+## Testing
 
-### Quick validation (about 5 minutes)
+### Quick Test
 
-Run the full suite:
+```bash
+./test/verify.sh
+```
+
+### Full Test Suite (25 tests)
 
 ```bash
 ./test/comprehensive_test.sh
 ```
 
-Coverage includes:
-- Service health checks
-- Whitelisted method checks
-- Whitelisted address checks
-- Non-whitelisted method blocking
-- Non-whitelisted address blocking
-- Response format validation
-- Error handling checks
-- Log consistency checks
-
-Expected result: `All passed (25/25)` or each item marked `[PASS]`.
-
-### Manual test commands
+### Manual Tests
 
 ```bash
-# 1) Health check
+# Health check
 curl http://localhost:8888/health
 
-# 2) Whitelisted method (should pass)
+# Whitelist method (allowed - 200)
 curl -X POST http://localhost:8888/rpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
-# 3) Non-whitelisted method (should be blocked)
+# Non-whitelist method (blocked - 403)
 curl -i -X POST http://localhost:8888/rpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"personal_sign","params":["msg","0x1234"],"id":1}'
-# Expected: HTTP 403 Forbidden
 
-# 4) Check blocked records
-curl http://localhost:8545/blocked | jq .
+# View blocked records
+curl http://localhost:8545/blocked
+
+# View statistics
+curl http://localhost:8545/stats
 ```
 
 ---
 
-## 6) Troubleshooting
+## Troubleshooting
 
-### Port conflict
+### Port Conflict
 
-Problem: Port `8888` or `8545` is already in use.
-
+**Docker mode:**
 ```bash
 lsof -i :8888
 lsof -i :8545
 ```
 
-Fix options:
-- Stop the process using the port: `kill <PID>`
-- Adjust port mappings in `docker-compose.yml`
-
-### Docker build failure
-
-Problem: `docker-compose up` fails during build/start.
-
+**RHEL native mode:**
 ```bash
-docker-compose build apache-proxy
-docker logs apache-rpc-proxy
+ss -tlnp | grep 8888
+ss -tlnp | grep 8545
+netstat -tlnp | grep 8888
 ```
 
-Common causes:
-- Network or registry configuration issue
-- Package source issue during image build
+### Service Won't Start
 
-### HTTP 500 response
-
+**Docker mode:**
 ```bash
-# 1) Apache error logs
-docker logs apache-rpc-proxy --tail 50 | grep "\[error\]"
+docker-compose logs apache-rpc-proxy
+docker-compose logs ethereum-rpc-mock
+docker-compose restart
+```
 
-# 2) Lua script syntax check
+**RHEL native mode:**
+```bash
+# Check service status
+sudo systemctl status ethereum-rpc-mock
+sudo systemctl status httpd
+
+# Check logs
+sudo journalctl -u ethereum-rpc-mock -n 50
+sudo tail -50 /var/log/httpd/rpc-proxy-error.log
+
+# Test configuration
+sudo httpd -t
+```
+
+### Lua Script Errors
+
+**Docker mode:**
+```bash
 docker exec -it apache-rpc-proxy lua -e "dofile('/usr/local/apache2/scripts/rpc_proxy.lua')"
-
-# 3) Verify config file inside container
-docker exec -it apache-rpc-proxy cat /etc/apache2/config/whitelist.json
 ```
 
-### Config changes not applied
+**RHEL native mode:**
+```bash
+sudo lua -e "dofile('/etc/httpd/lua/rpc_proxy.lua')"
+```
 
-Problem: `whitelist.json` was changed but rules did not update.
-
-Fix:
+### Configuration Not Applied
 
 ```bash
-docker-compose restart apache-proxy
-# or
+# Docker mode
 ./restart.sh
+
+# RHEL native mode
+sudo ./restart.sh
 ```
 
-### Container unreachable
+### SELinux Denials
 
-Problem: `curl: (7) Failed to connect`.
-
+Check for SELinux denials:
 ```bash
-# 1) Check container status
-docker-compose ps
+sudo sealert -a /var/log/audit/audit.log
+```
 
-# 2) Check logs
-docker logs apache-rpc-proxy
+Common fixes:
+```bash
+sudo setsebool -P httpd_can_network_connect 1
+sudo setsebool -P httpd_enable_cgi 1
+sudo restorecon -Rv /etc/httpd/
+```
 
-# 3) Test from inside container
+### Connection Refused
+
+Check if services are listening:
+```bash
+# Docker mode
 docker exec -it apache-rpc-proxy curl http://localhost:80/health
+
+# RHEL native mode
+curl http://localhost:8888/health
+curl http://localhost:8545/health
 ```
 
 ---
 
-## 7) Production recommendations
+## Production Recommendations
 
-### Whitelist management
-- Review `config/whitelist.json` regularly.
-- Follow least-privilege policy.
-- Prefer explicit addresses over wildcards.
+### Whitelist Management
+- Review `whitelist.json` regularly
+- Follow least-privilege policy
+- Prefer explicit addresses over wildcards
 
-### Logging
-
+### Security Hardening (RHEL)
 ```bash
-curl http://localhost:8545/stats | jq .
-curl http://localhost:8545/blocked | jq .
+# Enable HTTPS
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+
+# Restrict source IPs in Apache config
+# Add to /etc/httpd/conf.d/rpc-proxy.conf:
+# <RequireAll>
+#     Require ip 10.0.0.0/8
+# </RequireAll>
+
+# Enable ModSecurity (if needed)
+sudo yum install -y mod_security
+sudo systemctl restart httpd
 ```
 
 ### Monitoring
 
-Track these metrics:
-- Container health and uptime
-- HTTP status code distribution (`200` vs `403`)
-- Growth of `blocked_count` on the mock service
-
-### Security hardening
-- Enable HTTPS in `rpc-proxy.conf`
-- Restrict source IPs with Apache `Require ip`
-- Enable basic auth if needed
-
----
-
-## 8) Updates
-
-### Upgrade steps
-
 ```bash
-# 1) Pull latest code
-git pull origin main
+# Check statistics via API
+curl http://localhost:8545/stats | jq .
 
-# 2) Rebuild image
-docker-compose build apache-proxy
+# View blocked requests
+curl http://localhost:8545/blocked | jq .
 
-# 3) Restart services
-docker-compose up -d
+# Set up systemd timer for log rotation
+sudo journalctl -u ethereum-rpc-mock --rotate
+sudo journalctl -u ethereum-rpc-mock --vacuum-time=7d
 ```
 
-### Version notes
-
-This project pins versions for environment consistency. If you need upgrades, update:
-
-- `apache/Dockerfile` (base image)
-- `docker-compose.yml` (service images/config)
-- `mock-backend/Dockerfile` (mock backend dependencies)
-
 ---
 
-## 9) FAQ
+## Uninstallation
 
-### Q1: Why Lua 5.1 instead of the latest Lua?
-
-A: Apache `mod_lua` currently targets the Lua 5.1 API.
-
-### Q2: How do I add a new whitelisted address?
-
-A: Edit `config/whitelist.json`, add to `allowed_addresses`, then restart Apache.
-
-### Q3: What is the difference between the mock service and a real node?
-
-A: The mock service returns simulated data for testing and demos. For production, replace `http://rpc-backend:8545` with a real Ethereum node endpoint.
-
-### Q4: How do I forward traffic to a real node?
-
-A: Update the backend URL in `scripts/rpc_proxy.lua`:
-
-```lua
-local cmd = string.format(
-    "curl -s -X POST -H 'Content-Type: application/json' --data '%s' http://YOUR_REAL_NODE:8545/",
-    escaped_body
-)
+### Docker Mode
+```bash
+./stop.sh
+cd ..
+rm -rf Apache
 ```
 
-### Q5: Where are logs stored?
-
-A: By default, Docker logs are managed by the Docker logging driver. Configure volumes or logging drivers in `docker-compose.yml` if persistence is required.
+### RHEL Native Mode
+```bash
+sudo systemctl stop ethereum-rpc-mock httpd
+sudo systemctl disable ethereum-rpc-mock httpd
+sudo rm /etc/systemd/system/ethereum-rpc-mock.service
+sudo rm /etc/systemd/system/ethereum-rpc-proxy.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/ethereum-rpc-mock
+sudo rm -rf /opt/ethereum-rpc-filter
+cd ..
+rm -rf Apache
+```
 
 ---
 
-## 10) Getting help
-
-- Full project docs: `README.md`
-- Run test suite: `./test/comprehensive_test.sh`
-- View proxy logs: `docker logs -f apache-rpc-proxy`
-- GitHub issues: [https://github.com/JukLee0ira/Apache/issues](https://github.com/JukLee0ira/Apache/issues)
-
----
-
-**Deployment complete!** You can now use Ethereum RPC Filter.
+**Deployment complete!** If you have any issues, please open an issue on GitHub.

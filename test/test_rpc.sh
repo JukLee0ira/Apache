@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # test_rpc.sh - Ethereum JSON-RPC Filtering POC Test Script
+# Supports both Docker and Native (systemd) deployment modes
 
 set -e
 
@@ -12,6 +13,11 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Detect deployment mode
+check_docker_mode() {
+    command -v docker &> /dev/null && docker ps &> /dev/null 2>&1
+}
 
 echo "=========================================="
 echo "Ethereum RPC Filtering POC Test Script"
@@ -108,6 +114,14 @@ send_rpc_request() {
 
 # Main test flow
 main() {
+    # Detect deployment mode
+    if check_docker_mode; then
+        echo "Deployment Mode: Docker"
+    else
+        echo "Deployment Mode: Native (systemd)"
+    fi
+    echo ""
+
     # Wait for services
     wait_for_services
 

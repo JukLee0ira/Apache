@@ -2,7 +2,7 @@
 -- Verify requests -> Record logs -> Allow or block
 -- Blocked requests also notify Mock Server to record
 
-local whitelist_path = "/etc/apache2/config/whitelist.json"
+local whitelist_path = "/etc/httpd/conf.d/whitelist.json"
 local whitelist = nil
 
 -- Get timestamp
@@ -295,7 +295,7 @@ function record_blocked(rpc, client_ip, err)
     -- Asynchronously send to mock server /blocked endpoint
     local escaped = data:gsub("'", "'\"'\"'")
     local cmd = string.format(
-        "curl -s -X POST -H 'Content-Type: application/json' --data '%s' http://rpc-backend:8545/blocked > /dev/null 2>&1 &",
+        "curl -s -X POST -H 'Content-Type: application/json' --data '%s' http://127.0.0.1:8545/blocked > /dev/null 2>&1 &",
         escaped
     )
     os.execute(cmd)
@@ -362,7 +362,7 @@ function rpc(r)
     -- Forward to backend
     local escaped_body = body:gsub("'", "'\"'\"'")
     local cmd = string.format(
-        "curl -s -X POST -H 'Content-Type: application/json' --data '%s' http://rpc-backend:8545/",
+        "curl -s -X POST -H 'Content-Type: application/json' --data '%s' http://127.0.0.1:8545/",
         escaped_body
     )
     local result = io.popen(cmd):read("*all")

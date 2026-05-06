@@ -1,0 +1,28 @@
+[Unit]
+Description=Ethereum RPC Mock Server
+Documentation=https://github.com/JukLee0ira/Apache
+After=network.target
+
+[Service]
+Type=simple
+User=apache
+Group=apache
+WorkingDirectory=/opt/ethereum-rpc-mock
+ExecStart=/usr/bin/lua /opt/ethereum-rpc-mock/mock_rpc.lua 8545
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/httpd/conf.d/whitelist.json
+
+# Environment
+Environment=LUA_PATH="/usr/share/lua/5.1/?.lua;/usr/share/lua/5.1/?/init.lua;/usr/local/share/lua/5.1/?.lua;/usr/local/share/lua/5.1/?/init.lua;./?.lua;./?/init.lua"
+Environment=LUA_CPATH="/usr/lib64/lua/5.1/?.so;/usr/local/lib/lua/5.1/?.so"
+
+[Install]
+WantedBy=multi-user.target
