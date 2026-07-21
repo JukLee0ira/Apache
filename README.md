@@ -1,299 +1,106 @@
-# Ethereum RPC Filter Proxy
+# Grafana Besu priority alerts
 
-An Ethereum JSON-RPC filtering proxy built with **Apache + Lua** that implements whitelist-based access control.
+This package provisions eight Grafana-managed alert rules:
 
-## Architecture
+1. Host CPU > 80% for 5 minutes
+2. Besu process CPU > 0.8 CPU cores for 5 minutes
+3. Filesystem usage > 80% for 5 minutes
+4. CPU I/O wait > 10% for 5 minutes
+5. Host memory usage > 85% for 5 minutes
+6. Besu JVM heap usage > 85% of max heap for 5 minutes
+7. Combined server network traffic > 100 MiB/s for 5 minutes
+8. Established TCP connections > 1000 for 5 minutes
 
+## 1. Edit placeholders
+
+Open both YAML files and replace:
+
+- `PROMETHEUS_DS_UID` with the UID of the Prometheus data source in Grafana.
+- `ALERT_EMAIL_TO` with one or more recipients. Separate multiple addresses with semicolons.
+
+The Prometheus UID is shown in Grafana at **Connections -> Data sources -> Prometheus**. It is also present in the data-source URL.
+
+The rules assume these Prometheus job labels:
+
+- node exporter: `job` matches `node-exporter.*`
+- Besu: `job` matches `besu.*`
+
+Change those two regular expressions when your `prometheus.yml` uses different job names.
+
+## 2. Configure SMTP
+
+For a package installation, edit `/etc/grafana/grafana.ini`:
+
+```ini
+[smtp]
+enabled = true
+host = smtp.example.com:587
+user = monitoring@example.com
+password = CHANGE_ME
+from_address = monitoring@example.com
+from_name = Grafana Besu Alerts
+skip_verify = false
+startTLS_policy = MandatoryStartTLS
 ```
-Client -> Apache Proxy (port 8888) -> Lua Filter -> Whitelist Check
-                                              |
-                              +---------------+---------------+
-                              |                               |
-                        Allowed (200)                  Blocked (403)
-                              |                               |
-                    Mock RPC Server                  Record to /blocked
-                       (port 8545)
-```
 
-## Deployment Methods
+For Docker or Docker Compose, copy the values from `grafana-smtp.env.example` into the Grafana container environment.
 
-### Method A: Docker (Recommended for quick setup)
+## 3. Import by file provisioning
 
-**Prerequisites:**
-- Docker 20.10+
-- Docker Compose 1.29+
-- Git
+### Linux package installation
 
 ```bash
-git clone https://github.com/JukLee0ira/Apache.git
-cd Apache
-./start.sh
+sudo cp 01-alert-rules.yml /etc/grafana/provisioning/alerting/
+sudo cp 02-email-contact-point.yml /etc/grafana/provisioning/alerting/
+sudo systemctl restart grafana-server
 ```
 
-### Method B: Native Installation (RHEL/CentOS/Rocky Linux)
+### Docker Compose
 
-**Prerequisites:**
-- RHEL/CentOS/Rocky Linux 8+
-- Root access (sudo)
-- Internet connection
+Mount the directory into Grafana:
+
+```yaml
+services:
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./grafana-besu-alerts:/etc/grafana/provisioning/alerting:ro
+    environment:
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: "smtp.example.com:587"
+      GF_SMTP_USER: "monitoring@example.com"
+      GF_SMTP_PASSWORD: "CHANGE_ME"
+      GF_SMTP_FROM_ADDRESS: "monitoring@example.com"
+      GF_SMTP_FROM_NAME: "Grafana Besu Alerts"
+      GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
+```
+
+Then run:
 
 ```bash
-git clone https://github.com/JukLee0ira/Apache.git
-cd Apache
-sudo ./install-rhel.sh
+docker compose up -d --force-recreate grafana
 ```
 
-The installer will:
-1. Detect your operating system
-2. Install Apache, Lua, and required dependencies
-3. Compile and install Lua extensions (lua-cjson, lua-socket)
-4. Configure Apache with RPC proxy settings
-5. Set up systemd services
-6. Configure firewall (if firewalld is running)
-7. Configure SELinux (if Enforcing)
-8. Start all services
-9. Run verification tests
-
-**Alternative: Use convenience scripts after installation:**
-```bash
-./start.sh          # Start services
-./stop.sh           # Stop services
-./restart.sh        # Restart services
-./status.sh         # Check status
-```
-
-## Quick Start (After Installation)
-
-### Test the Filter
+Grafana can also reload files without a full restart:
 
 ```bash
-# Health check
-curl http://localhost:8888/health
-
-# Whitelist method (allowed)
-curl -X POST http://localhost:8888/rpc \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-
-# Non-whitelist method (blocked - returns 403)
-curl -i -X POST http://localhost:8888/rpc \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"personal_sign","params":["msg","0x1234"],"id":1}'
+curl -X POST -u admin:YOUR_PASSWORD \
+  http://localhost:3000/api/admin/provisioning/alerting/reload
 ```
 
-## Version Information
+## 4. Verify before relying on email
 
-| Component | Version |
-|-----------|---------|
-| Apache | 2.4.x |
-| Lua | 5.1.x |
-| Mock Backend | Lua 5.1 + LuaSocket |
+In Grafana:
 
-## Project Structure
+1. Open **Alerting -> Alert rules** and confirm the folder `Besu Infrastructure Alerts` exists.
+2. Open **Alerting -> Contact points -> besu-email** and send a test notification.
+3. Open Prometheus Explore and run each PromQL expression. A missing series usually means the `job` label or metric name differs.
+4. Temporarily lower one threshold, wait for the `for: 5m` period, and confirm both firing and resolved emails.
 
-```
-Apache/
-├── apache/                  # Apache Docker build
-│   ├── Dockerfile           # Docker build file
-│   ├── conf/                # Apache configuration
-│   │   ├── httpd-rhel.conf  # RHEL native Apache config
-│   │   └── sites-enabled/   # Debian-style sites config
-│   └── scripts/             # Apache Lua scripts (Docker)
-├── config/
-│   └── whitelist.json       # Whitelist configuration
-├── scripts/
-│   ├── rpc_proxy.lua        # Main Lua filter script
-│   └── install-mock-backend.sh  # Lua extensions installer
-├── systemd/
-│   ├── ethereum-rpc-mock.service   # Mock backend service
-│   └── ethereum-rpc-proxy.service  # Apache proxy service
-├── test/                    # Test scripts
-├── mock_rpc.lua            # Mock RPC server (Lua)
-├── mock-backend/           # Mock backend Docker build
-├── docker-compose.yml      # Docker orchestration
-├── install-rhel.sh        # RHEL native installer
-├── deploy.sh               # Auto-deploy script
-├── start.sh                # Start script (auto-detects Docker/systemd)
-├── stop.sh                 # Stop script (auto-detects Docker/systemd)
-├── restart.sh              # Restart script
-├── status.sh               # Status check script
-├── README.md               # This file
-└── DEPLOY.md               # Detailed deployment guide
-```
+## Important notes
 
-## Service Management
-
-### Docker Mode
-```bash
-./start.sh                  # Start all services
-./stop.sh                   # Stop all services
-./restart.sh                # Restart all services
-./status.sh                 # Check service status
-
-# Direct Docker commands
-docker-compose up -d        # Start
-docker-compose down         # Stop
-docker-compose restart      # Restart
-```
-
-### Native (systemd) Mode
-```bash
-# Using convenience scripts
-./start.sh                  # Start services
-./stop.sh                   # Stop services
-./restart.sh                # Restart services
-./status.sh                 # Check status
-
-# Direct systemctl commands
-sudo systemctl start ethereum-rpc-mock
-sudo systemctl start httpd
-sudo systemctl stop ethereum-rpc-mock httpd
-sudo systemctl restart ethereum-rpc-mock httpd
-sudo systemctl status ethereum-rpc-mock httpd
-
-# View logs
-journalctl -u ethereum-rpc-mock -f           # Mock backend logs
-tail -f /var/log/httpd/rpc-proxy-access.log  # Apache access logs
-tail -f /var/log/httpd/rpc-proxy-error.log   # Apache error logs
-```
-
-## Configuration
-
-### Whitelist Methods
-
-Edit `config/whitelist.json`:
-
-```json
-{
-  "allowed_addresses": [
-    "0x1234567890123456789012345678901234567890",
-    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-  ],
-  "allowed_methods": [
-    "eth_call",
-    "eth_getLogs",
-    "eth_blockNumber",
-    "net_version",
-    "eth_chainId",
-    "eth_getBalance",
-    "eth_sendRawTransaction"
-  ],
-  "allowed_events": [
-    "Transfer(address,address,uint256)",
-    "Approval(address,address,uint256)",
-    "Deposit(address,uint256)",
-    "Withdraw(address,uint256)"
-  ]
-}
-```
-
-**Note:** After modifying whitelist, restart the service:
-
-**Docker mode:**
-```bash
-./restart.sh
-```
-
-**Native mode:**
-```bash
-sudo ./restart.sh
-# Or:
-sudo systemctl restart ethereum-rpc-mock httpd
-```
-
-## Testing
-
-```bash
-# Run full test suite (25 tests)
-./test/comprehensive_test.sh
-
-# Quick verification
-./test/verify.sh
-
-# View blocked requests
-curl http://localhost:8545/blocked
-
-# View statistics
-curl http://localhost:8545/stats
-```
-
-## Ports
-
-| Service | Port |
-|---------|------|
-| Apache Proxy | 8888 |
-| Mock RPC | 8545 |
-
-## Troubleshooting
-
-### Port conflict
-
-**Docker mode:**
-```bash
-lsof -i :8888    # Check port 8888
-lsof -i :8545    # Check port 8545
-```
-
-**Native mode:**
-```bash
-ss -tlnp | grep 8888
-ss -tlnp | grep 8545
-```
-
-### View logs
-
-**Docker mode:**
-```bash
-docker logs -f apache-rpc-proxy
-docker logs -f ethereum-rpc-mock
-```
-
-**Native mode:**
-```bash
-journalctl -u ethereum-rpc-mock -f
-tail -f /var/log/httpd/rpc-proxy-access.log
-```
-
-### Configuration not taking effect
-
-```bash
-# Docker mode
-./restart.sh
-
-# Native mode
-sudo ./restart.sh
-```
-
-### SELinux issues (RHEL/CentOS)
-
-If you encounter permission denied errors:
-
-```bash
-# Allow Apache to make network connections
-sudo setsebool -P httpd_can_network_connect 1
-
-# Allow Apache to execute CGI/Lua scripts
-sudo setsebool -P httpd_enable_cgi 1
-
-# Verify
-sudo getenforce
-```
-
-### Firewall issues (RHEL/CentOS)
-
-```bash
-# Check firewall status
-sudo systemctl status firewalld
-
-# Open ports if needed
-sudo firewall-cmd --permanent --add-port=8888/tcp
-sudo firewall-cmd --permanent --add-port=8545/tcp
-sudo firewall-cmd --reload
-
-# Or disable firewall temporarily (not recommended for production)
-sudo systemctl stop firewalld
-```
-
-## License
-
-MIT
+- File-provisioned resources are read-only in the Grafana UI. Edit the YAML and reload or restart Grafana.
+- `02-email-contact-point.yml` provisions the complete notification-policy tree and routes the root policy to `besu-email`. It can overwrite existing policies. If you already have policies, merge the `besu-email` route into your existing exported policy file instead of copying this file directly.
+- The Besu CPU expression returns CPU cores used. `0.8` means 80% of one core. A busy multi-threaded Besu process can exceed `1.0`. Tune this threshold after observing the normal baseline.
+- Besu JVM metric names changed in newer releases. The heap rule supports both the older `jvm_memory_bytes_*` and newer `jvm_memory_*_bytes` names.
+- Network and connection thresholds are starting values. Set them from your normal baseline and link capacity.

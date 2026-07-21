@@ -1,0 +1,375 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: besu-host-priority-alerts
+    folder: Besu Infrastructure Alerts
+    interval: 1m
+    rules:
+      - uid: host_cpu_high
+        title: Host CPU usage above 80%
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: '100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=~"node-exporter.*",mode="idle"}[5m])))'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [80], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Host CPU high on {{ $labels.instance }}'
+          description: 'Average non-idle CPU has exceeded 80% for 5 minutes. Current value: {{ $values.B.Value }}%.'
+        labels: {service: besu, component: host, severity: warning}
+
+      - uid: besu_cpu_high
+        title: Besu process CPU above 0.8 cores
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: 'rate(process_cpu_seconds_total{job=~"besu.*"}[5m])'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [0.8], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Besu CPU high on {{ $labels.instance }}'
+          description: 'Besu has used more than 0.8 CPU cores for 5 minutes. Current value: {{ $values.B.Value }} cores.'
+        labels: {service: besu, component: process, severity: warning}
+
+      - uid: host_disk_used_high
+        title: Filesystem usage above 80%
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: '100 * (1 - node_filesystem_avail_bytes{job=~"node-exporter.*",fstype!~"tmpfs|overlay|squashfs|nsfs",mountpoint!~"/run($|/.*)|/var/lib/docker/.+"} / node_filesystem_size_bytes{job=~"node-exporter.*",fstype!~"tmpfs|overlay|squashfs|nsfs",mountpoint!~"/run($|/.*)|/var/lib/docker/.+"}) and on(instance,device,mountpoint) node_filesystem_readonly == 0'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}} {{mountpoint}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [80], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Disk usage high on {{ $labels.instance }} {{ $labels.mountpoint }}'
+          description: 'Filesystem usage has exceeded 80% for 5 minutes. Current value: {{ $values.B.Value }}%.'
+        labels: {service: besu, component: disk, severity: warning}
+
+      - uid: host_iowait_high
+        title: CPU I/O wait above 10%
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: '100 * avg by (instance) (rate(node_cpu_seconds_total{job=~"node-exporter.*",mode="iowait"}[5m]))'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [10], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'I/O wait high on {{ $labels.instance }}'
+          description: 'CPU I/O wait has exceeded 10% for 5 minutes. Current value: {{ $values.B.Value }}%.'
+        labels: {service: besu, component: disk, severity: warning}
+
+      - uid: host_memory_high
+        title: Host memory usage above 85%
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: '100 * (1 - node_memory_MemAvailable_bytes{job=~"node-exporter.*"} / node_memory_MemTotal_bytes{job=~"node-exporter.*"})'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [85], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Host memory high on {{ $labels.instance }}'
+          description: 'Host memory usage has exceeded 85% for 5 minutes. Current value: {{ $values.B.Value }}%.'
+        labels: {service: besu, component: memory, severity: warning}
+
+      - uid: besu_heap_high
+        title: Besu JVM heap usage above 85%
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: '100 * ((sum by(instance) (jvm_memory_used_bytes{job=~"besu.*",area="heap"}) or sum by(instance) (jvm_memory_bytes_used{job=~"besu.*",area="heap"})) / (sum by(instance) (jvm_memory_max_bytes{job=~"besu.*",area="heap"}) or sum by(instance) (jvm_memory_bytes_max{job=~"besu.*",area="heap"})))'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [85], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Besu JVM heap high on {{ $labels.instance }}'
+          description: 'Besu heap usage has exceeded 85% of configured max heap for 5 minutes. Current value: {{ $values.B.Value }}%.'
+        labels: {service: besu, component: memory, severity: warning}
+
+      - uid: host_network_high
+        title: Server network traffic above 100 MiB/s
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: 'sum by(instance) (rate(node_network_receive_bytes_total{job=~"node-exporter.*",device!~"lo|veth.*|docker.*|br-.*"}[5m]) + rate(node_network_transmit_bytes_total{job=~"node-exporter.*",device!~"lo|veth.*|docker.*|br-.*"}[5m])) / 1024 / 1024'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [100], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Network traffic high on {{ $labels.instance }}'
+          description: 'Combined receive and transmit traffic has exceeded 100 MiB/s for 5 minutes. Current value: {{ $values.B.Value }} MiB/s.'
+        labels: {service: besu, component: network, severity: warning}
+
+      - uid: host_tcp_connections_high
+        title: Established TCP connections above 1000
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PROMETHEUS_DS_UID
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              datasource: {type: prometheus, uid: PROMETHEUS_DS_UID}
+              editorMode: code
+              expr: 'node_netstat_Tcp_CurrEstab{job=~"node-exporter.*"}'
+              instant: true
+              intervalMs: 1000
+              legendFormat: '{{instance}}'
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              reducer: last
+              type: reduce
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              datasource: {type: __expr__, uid: __expr__}
+              expression: B
+              conditions:
+                - evaluator: {params: [1000], type: gt}
+                  operator: {type: and}
+                  query: {params: [C]}
+                  reducer: {params: [], type: last}
+                  type: query
+              type: threshold
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'TCP connection count high on {{ $labels.instance }}'
+          description: 'Established TCP connections have exceeded 1000 for 5 minutes. Current value: {{ $values.B.Value }}.'
+        labels: {service: besu, component: network, severity: warning}

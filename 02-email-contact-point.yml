@@ -1,0 +1,28 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: besu-email
+    receivers:
+      - uid: besu_email_receiver
+        type: email
+        disableResolveMessage: false
+        settings:
+          addresses: ALERT_EMAIL_TO
+          singleEmail: false
+
+policies:
+  - orgId: 1
+    receiver: besu-email
+    group_by: ['grafana_folder', 'alertname']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: besu-email
+        object_matchers:
+          - ['service', '=', 'besu']
+        group_by: ['grafana_folder', 'alertname', 'instance']
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 2h
