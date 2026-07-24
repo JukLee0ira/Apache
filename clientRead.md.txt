@@ -1,0 +1,385 @@
+下面用 Node.js 自带的 `http` 模块实现。它不需要安装任何第三方依赖。
+
+它会完成三件事：
+
+1. 监听 `8080` 端口。
+2. 接收 Grafana 发来的 Webhook JSON。
+3. 在终端打印告警内容，并返回 HTTP 200。
+
+## 1. 创建 JS 文件
+
+创建目录：
+
+```bash
+mkdir -p grafana-webhook
+cd grafana-webhook
+```
+
+创建文件：
+
+```bash
+vi webhook-server.js
+```
+
+写入下面的代码：
+
+```javascript
+const http = require("http");
+
+const HOST = "0.0.0.0";
+const PORT = 8080;
+const PATH = "/grafana-alert";
+
+const server = http.createServer((request, response) => {
+  if (request.method !== "POST" || request.url !== PATH) {
+    response.writeHead(404, {
+      "Content-Type": "application/json",
+    });
+
+    response.end(
+      JSON.stringify({
+        success: false,
+        message: "Not found",
+      })
+    );
+
+    return;
+  }
+
+  let body = "";
+
+  request.on("data", (chunk) => {
+    body += chunk.toString();
+
+    // 防止异常请求发送过大的数据。
+    if (body.length > 1024 * 1024) {
+      request.destroy();
+    }
+  });
+
+  request.on("end", () => {
+    try {
+      const payload = JSON.parse(body);
+
+      displayAlert(payload);
+
+      const result = JSON.stringify({
+        success: true,
+        message: "Grafana alert received",
+      });
+
+      response.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(result),
+      });
+
+      response.end(result);
+    } catch (error) {
+      console.error("收到的内容不是有效 JSON：", error.message);
+      console.error("原始请求：", body);
+
+      const result = JSON.stringify({
+        success: false,
+        message: "Invalid JSON",
+      });
+
+      response.writeHead(400, {
+        "Content-Type": "application/json",
+      });
+
+      response.end(result);
+    }
+  });
+
+  request.on("error", (error) => {
+    console.error("读取请求失败：", error.message);
+
+    if (!response.headersSent) {
+      response.writeHead(500, {
+        "Content-Type": "application/json",
+      });
+    }
+
+    response.end(
+      JSON.stringify({
+        success: false,
+        message: "Internal server error",
+      })
+    );
+  });
+});
+
+function displayAlert(payload) {
+  const receivedAt = new Date().toLocaleString();
+  const status = payload.status || payload.state || "unknown";
+  const title = payload.title || "Grafana Alert";
+  const alerts = Array.isArray(payload.alerts) ? payload.alerts : [];
+
+  console.log("\n==================================================");
+  console.log(`收到时间：${receivedAt}`);
+  console.log(`告警状态：${status}`);
+  console.log(`告警标题：${title}`);
+  console.log(`告警数量：${alerts.length}`);
+  console.log("==================================================");
+
+  if (alerts.length === 0) {
+    console.log("完整请求内容：");
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  alerts.forEach((alert, index) => {
+    const labels = alert.labels || {};
+    const annotations = alert.annotations || {};
+
+    console.log(`\n告警 ${index + 1}`);
+    console.log(`状态：${alert.status || status}`);
+    console.log(`名称：${labels.alertname || "unknown"}`);
+    console.log(`级别：${labels.severity || "unknown"}`);
+    console.log(`分组：${labels.alert_group || labels.group || "unknown"}`);
+    console.log(`节点：${labels.instance || "unknown"}`);
+    console.log(`Job：${labels.job || "unknown"}`);
+    console.log(`摘要：${annotations.summary || ""}`);
+    console.log(`详情：${annotations.description || ""}`);
+    console.log(`开始时间：${alert.startsAt || ""}`);
+    console.log(`Grafana 地址：${alert.generatorURL || ""}`);
+  });
+
+  console.log("\n完整 JSON：");
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+server.listen(PORT, HOST, () => {
+  console.log("Grafana Webhook 接收服务已启动");
+  console.log(`监听地址：http://${HOST}:${PORT}${PATH}`);
+  console.log(`本机测试：http://127.0.0.1:${PORT}${PATH}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`端口 ${PORT} 已被占用`);
+  } else {
+    console.error("服务启动失败：", error.message);
+  }
+
+  process.exit(1);
+});
+```
+
+## 2. 启动客户端
+
+先确认服务器安装了 Node.js：
+
+```bash
+node --version
+```
+
+能够看到类似下面的版本号即可：
+
+```text
+v20.19.0
+```
+
+启动：
+
+```bash
+node webhook-server.js
+```
+
+正常显示：
+
+```text
+Grafana Webhook 接收服务已启动
+监听地址：http://0.0.0.0:8080/grafana-alert
+本机测试：http://127.0.0.1:8080/grafana-alert
+```
+
+此时不要关闭终端。服务需要持续运行，才能接收 Grafana 告警。
+
+## 3. 先用 curl 测试
+
+在同一台服务器打开另一个终端，执行：
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8080/grafana-alert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "firing",
+    "title": "[FIRING:1] BesuTargetDown",
+    "alerts": [
+      {
+        "status": "firing",
+        "labels": {
+          "alertname": "BesuTargetDown",
+          "severity": "P0",
+          "alert_group": "Besu",
+          "instance": "10.20.30.41:9545",
+          "job": "besu"
+        },
+        "annotations": {
+          "summary": "Besu target is unavailable",
+          "description": "Prometheus cannot scrape the Besu target."
+        },
+        "startsAt": "2026-07-24T09:00:00Z"
+      }
+    ]
+  }'
+```
+
+curl 应收到：
+
+```json
+{"success":true,"message":"Grafana alert received"}
+```
+
+运行 JS 的终端会显示：
+
+```text
+==================================================
+收到时间：2026/7/24 17:00:00
+告警状态：firing
+告警标题：[FIRING:1] BesuTargetDown
+告警数量：1
+==================================================
+
+告警 1
+状态：firing
+名称：BesuTargetDown
+级别：P0
+分组：Besu
+节点：10.20.30.41:9545
+Job：besu
+摘要：Besu target is unavailable
+详情：Prometheus cannot scrape the Besu target.
+开始时间：2026-07-24T09:00:00Z
+```
+
+这就证明接收端正常。
+
+## 4. 在 Grafana 中配置
+
+先确认运行 JS 的服务器内网 IP：
+
+```bash
+hostname -I
+```
+
+假设结果是：
+
+```text
+10.20.30.50
+```
+
+那么 Webhook URL 是：
+
+```text
+http://10.20.30.50:8080/grafana-alert
+```
+
+在 Grafana 中进入：
+
+```text
+Alerting
+→ Contact points
+→ Add contact point
+```
+
+填写：
+
+```text
+Name: besu-webhook
+Integration: Webhook
+URL: http://10.20.30.50:8080/grafana-alert
+HTTP Method: POST
+```
+
+其他配置先保持默认，然后点击：
+
+```text
+Test
+→ Send test notification
+```
+
+Grafana 的 Webhook Contact Point 会向配置的 URL 发送包含告警信息的 JSON 请求。Contact Point 还需要直接绑定到规则，或者通过 Notification Policy 路由，才能接收正式告警。([Grafana Labs][1])
+
+如果测试成功：
+
+* Grafana 页面会显示测试通知发送成功；
+* JS 终端会打印完整告警；
+* Grafana 收到客户端返回的 HTTP 200。
+
+## 5. 绑定正式告警
+
+有两种方式。
+
+第一种是在告警规则中直接选择 Contact Point：
+
+```text
+Alert rule
+→ Notifications
+→ Contact point
+→ besu-webhook
+```
+
+第二种是通过 Notification Policy：
+
+```text
+Alerting
+→ Notification policies
+```
+
+例如根据级别路由：
+
+```text
+severity = P0
+→ besu-webhook
+```
+
+也可以为 P1 配同一个接收端：
+
+```text
+severity = P1
+→ besu-webhook
+```
+
+Grafana 支持把 Contact Point 直接分配给 Grafana-managed Alert Rule，也支持通过 Notification Policy 进行更灵活的路由。([Grafana Labs][2])
+
+## 6. 注意网络地址
+
+Grafana 和 JS 服务在同一台普通服务器上时，可以配置：
+
+```text
+http://127.0.0.1:8080/grafana-alert
+```
+
+Grafana 在另一台服务器上时，必须配置 JS 服务器的内网 IP：
+
+```text
+http://10.20.30.50:8080/grafana-alert
+```
+
+Grafana 在 Docker 中时，`127.0.0.1` 表示 Grafana 容器自身，不能指向宿主机上的 JS 服务。此时应使用宿主机内网 IP，或者同一 Docker 网络中的服务名。
+
+还要确认端口正在监听：
+
+```bash
+ss -lntp | grep 8080
+```
+
+正常会看到：
+
+```text
+LISTEN 0 511 0.0.0.0:8080
+```
+
+如果有防火墙，需要允许 Grafana 服务器访问 `8080` 端口。最简单的判断方法是在 Grafana 所在服务器执行：
+
+```bash
+curl http://10.20.30.50:8080/grafana-alert
+```
+
+这里会返回 `404`，因为它发送的是 GET，而服务只接受 POST。能收到 `404` 反而说明网络和端口已经连通。
+
+[1]: https://grafana.com/docs/grafana-cloud/alerting-and-irm/alerting/configure-notifications/manage-contact-points/integrations/webhook-notifier/?pg=blog&plcmt=body-txt&utm_source=chatgpt.com "Configure the webhook notifier for Alerting | Grafana Cloud documentation"
+[2]: https://grafana.com/docs/grafana/latest/alerting/configure-notifications/?utm_source=chatgpt.com "Configure notifications | Grafana documentation"

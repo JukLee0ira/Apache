@@ -1,0 +1,140 @@
+const http = require("http");
+
+const HOST = "0.0.0.0";
+const PORT = 8080;
+const PATH = "/grafana-alert";
+
+const server = http.createServer((request, response) => {
+  if (request.method !== "POST" || request.url !== PATH) {
+    response.writeHead(404, {
+      "Content-Type": "application/json",
+    });
+
+    response.end(
+      JSON.stringify({
+        success: false,
+        message: "Not found",
+      })
+    );
+
+    return;
+  }
+
+  let body = "";
+
+  request.on("data", (chunk) => {
+    body += chunk.toString();
+
+    // 防止异常请求发送过大的数据。
+    if (body.length > 1024 * 1024) {
+      request.destroy();
+    }
+  });
+
+  request.on("end", () => {
+    try {
+      const payload = JSON.parse(body);
+
+      displayAlert(payload);
+
+      const result = JSON.stringify({
+        success: true,
+        message: "Grafana alert received",
+      });
+
+      response.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(result),
+      });
+
+      response.end(result);
+    } catch (error) {
+      console.error("收到的内容不是有效 JSON：", error.message);
+      console.error("原始请求：", body);
+
+      const result = JSON.stringify({
+        success: false,
+        message: "Invalid JSON",
+      });
+
+      response.writeHead(400, {
+        "Content-Type": "application/json",
+      });
+
+      response.end(result);
+    }
+  });
+
+  request.on("error", (error) => {
+    console.error("读取请求失败：", error.message);
+
+    if (!response.headersSent) {
+      response.writeHead(500, {
+        "Content-Type": "application/json",
+      });
+    }
+
+    response.end(
+      JSON.stringify({
+        success: false,
+        message: "Internal server error",
+      })
+    );
+  });
+});
+
+function displayAlert(payload) {
+  const receivedAt = new Date().toLocaleString();
+  const status = payload.status || payload.state || "unknown";
+  const title = payload.title || "Grafana Alert";
+  const alerts = Array.isArray(payload.alerts) ? payload.alerts : [];
+
+  console.log("\n==================================================");
+  console.log(`收到时间：${receivedAt}`);
+  console.log(`告警状态：${status}`);
+  console.log(`告警标题：${title}`);
+  console.log(`告警数量：${alerts.length}`);
+  console.log("==================================================");
+
+  if (alerts.length === 0) {
+    console.log("完整请求内容：");
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  alerts.forEach((alert, index) => {
+    const labels = alert.labels || {};
+    const annotations = alert.annotations || {};
+
+    console.log(`\n告警 ${index + 1}`);
+    console.log(`状态：${alert.status || status}`);
+    console.log(`名称：${labels.alertname || "unknown"}`);
+    console.log(`级别：${labels.severity || "unknown"}`);
+    console.log(`分组：${labels.alert_group || labels.group || "unknown"}`);
+    console.log(`节点：${labels.instance || "unknown"}`);
+    console.log(`Job：${labels.job || "unknown"}`);
+    console.log(`摘要：${annotations.summary || ""}`);
+    console.log(`详情：${annotations.description || ""}`);
+    console.log(`开始时间：${alert.startsAt || ""}`);
+    console.log(`Grafana 地址：${alert.generatorURL || ""}`);
+  });
+
+  console.log("\n完整 JSON：");
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+server.listen(PORT, HOST, () => {
+  console.log("Grafana Webhook 接收服务已启动");
+  console.log(`监听地址：http://${HOST}:${PORT}${PATH}`);
+  console.log(`本机测试：http://127.0.0.1:${PORT}${PATH}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`端口 ${PORT} 已被占用`);
+  } else {
+    console.error("服务启动失败：", error.message);
+  }
+
+  process.exit(1);
+});

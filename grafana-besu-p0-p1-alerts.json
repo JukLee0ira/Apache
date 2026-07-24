@@ -1,0 +1,1705 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "P0-besu-critical-alerts",
+      "folder": "Besu Alerts / P0 Critical",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "host_cpu_high",
+          "title": "Host CPU usage above 80%",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job=~\"node-exporter.*\",mode=\"idle\"}[5m])))",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        80
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Host CPU high on {{ $labels.instance }}",
+            "description": "Average non-idle CPU has exceeded 80% for 5 minutes. Current value: {{ $values.B.Value }}%.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "host",
+            "severity": "critical",
+            "priority": "P0"
+          }
+        },
+        {
+          "uid": "besu_cpu_high",
+          "title": "Besu process CPU above 0.8 cores",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "rate(process_cpu_seconds_total{job=~\"besu.*\"}[5m])",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0.8
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Besu CPU high on {{ $labels.instance }}",
+            "description": "Besu has used more than 0.8 CPU cores for 5 minutes. Current value: {{ $values.B.Value }} cores.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "process",
+            "severity": "critical",
+            "priority": "P0"
+          }
+        },
+        {
+          "uid": "host_disk_used_high",
+          "title": "Filesystem usage above 80%",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "100 * (1 - node_filesystem_avail_bytes{job=~\"node-exporter.*\",fstype!~\"tmpfs|overlay|squashfs|nsfs\",mountpoint!~\"/run($|/.*)|/var/lib/docker/.+\"} / node_filesystem_size_bytes{job=~\"node-exporter.*\",fstype!~\"tmpfs|overlay|squashfs|nsfs\",mountpoint!~\"/run($|/.*)|/var/lib/docker/.+\"}) and on(instance,device,mountpoint) node_filesystem_readonly == 0",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}} {{mountpoint}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        80
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Disk usage high on {{ $labels.instance }} {{ $labels.mountpoint }}",
+            "description": "Filesystem usage has exceeded 80% for 5 minutes. Current value: {{ $values.B.Value }}%.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "disk",
+            "severity": "critical",
+            "priority": "P0"
+          }
+        },
+        {
+          "uid": "host_iowait_high",
+          "title": "CPU I/O wait above 10%",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "100 * avg by (instance) (rate(node_cpu_seconds_total{job=~\"node-exporter.*\",mode=\"iowait\"}[5m]))",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        10
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "I/O wait high on {{ $labels.instance }}",
+            "description": "CPU I/O wait has exceeded 10% for 5 minutes. Current value: {{ $values.B.Value }}%.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "disk",
+            "severity": "critical",
+            "priority": "P0"
+          }
+        },
+        {
+          "uid": "host_memory_high",
+          "title": "Host memory usage above 85%",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=~\"node-exporter.*\"} / node_memory_MemTotal_bytes{job=~\"node-exporter.*\"})",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        85
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Host memory high on {{ $labels.instance }}",
+            "description": "Host memory usage has exceeded 85% for 5 minutes. Current value: {{ $values.B.Value }}%.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "memory",
+            "severity": "critical",
+            "priority": "P0"
+          }
+        },
+        {
+          "uid": "besu_heap_high",
+          "title": "Besu JVM heap usage above 85%",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "100 * ((sum by(instance) (jvm_memory_used_bytes{job=~\"besu.*\",area=\"heap\"}) or sum by(instance) (jvm_memory_bytes_used{job=~\"besu.*\",area=\"heap\"})) / (sum by(instance) (jvm_memory_max_bytes{job=~\"besu.*\",area=\"heap\"}) or sum by(instance) (jvm_memory_bytes_max{job=~\"besu.*\",area=\"heap\"})))",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        85
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Besu JVM heap high on {{ $labels.instance }}",
+            "description": "Besu heap usage has exceeded 85% of configured max heap for 5 minutes. Current value: {{ $values.B.Value }}%.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "memory",
+            "severity": "critical",
+            "priority": "P0"
+          }
+        },
+        {
+          "uid": "besu_target_down",
+          "title": "P0 Besu Prometheus target down",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "up{job=~\"besu.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "lt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "2m",
+          "annotations": {
+            "summary": "Besu target is down: {{ $labels.instance }}",
+            "description": "Prometheus has been unable to scrape the Besu target for 2 minutes. Current up value: {{ $values.B.Value }}.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "monitoring",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_height_metric_missing",
+          "title": "P0 Besu blockchain metric missing",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "absent_over_time(ethereum_blockchain_height{job=~\"besu.*\"}[3m])",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "0s",
+          "annotations": {
+            "summary": "Besu blockchain metrics are missing",
+            "description": "Prometheus has received no ethereum_blockchain_height series from the Besu job for 3 minutes. This rule is job-level because a completely removed target has no instance label.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "monitoring",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_no_new_block",
+          "title": "P0 Besu node stopped producing/importing blocks",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "time() - besu_blockchain_chain_head_timestamp{job=~\"besu.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        15
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "1m",
+          "annotations": {
+            "summary": "No new block on {{ $labels.instance }}",
+            "description": "The chain-head timestamp is more than 15 seconds behind current time for at least 1 minute. Current delay: {{ $values.B.Value }} seconds. Adjust 15 seconds to your QBFT block period.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "blockchain",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_height_lag",
+          "title": "P0 Besu node height lag",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "max(ethereum_blockchain_height{job=~\"besu.*\"}) - on() group_right(instance) ethereum_blockchain_height{job=~\"besu.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        3
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "2m",
+          "annotations": {
+            "summary": "Besu node is behind: {{ $labels.instance }}",
+            "description": "This node is more than 3 blocks behind the highest observed Besu node for 2 minutes. Lag: {{ $values.B.Value }} blocks.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "blockchain",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_not_in_sync",
+          "title": "P0 Besu synchronizer not in sync",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "besu_synchronizer_in_sync{job=~\"besu.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        1
+                      ],
+                      "type": "lt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "3m",
+          "annotations": {
+            "summary": "Besu node is not in sync: {{ $labels.instance }}",
+            "description": "besu_synchronizer_in_sync has remained below 1 for 3 minutes.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "synchronizer",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_peers_low",
+          "title": "P0 Besu peer count insufficient",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "ethereum_peer_count{job=~\"besu.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        3
+                      ],
+                      "type": "lt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "3m",
+          "annotations": {
+            "summary": "Besu peer count is low: {{ $labels.instance }}",
+            "description": "Peer count has remained below 3 for 3 minutes. Change the threshold to expected validators minus one, plus any non-validator peers.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "p2p",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_txpool_dropped",
+          "title": "P0 Besu txpool dropped transactions",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "sum by(instance) (increase(besu_transaction_pool_transactions_removed_total{job=~\"besu.*\",operation=\"dropped\"}[5m]))",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "0s",
+          "annotations": {
+            "summary": "Besu txpool dropped transactions: {{ $labels.instance }}",
+            "description": "One or more transactions were removed from the transaction pool with operation=dropped during the last 5 minutes. Count: {{ $values.B.Value }}. This native metric does not distinguish eviction reason.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "txpool",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": false
+        },
+        {
+          "uid": "besu_execution_queue_dropped_custom",
+          "title": "P0 Besu execution queue dropped tasks (custom metric)",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "increase(besu_custom_execution_queue_dropped_total{job=~\"besu.*\"}[5m])",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "0s",
+          "annotations": {
+            "summary": "Besu execution queue dropped tasks: {{ $labels.instance }}",
+            "description": "Paused by default. Enable only after your exporter or Besu plugin exposes besu_custom_execution_queue_dropped_total. Besu does not provide this exact business queue metric as a stable native metric.",
+            "priority_definition": "P0: affects service availability, business data processing, or server capacity."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "execution",
+            "severity": "critical",
+            "priority": "P0"
+          },
+          "isPaused": true
+        }
+      ]
+    },
+    {
+      "orgId": 1,
+      "name": "P1-besu-warning-alerts",
+      "folder": "Besu Alerts / P1 Warning",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "host_network_high",
+          "title": "Server network traffic above 100 MiB/s",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "sum by(instance) (rate(node_network_receive_bytes_total{job=~\"node-exporter.*\",device!~\"lo|veth.*|docker.*|br-.*\"}[5m]) + rate(node_network_transmit_bytes_total{job=~\"node-exporter.*\",device!~\"lo|veth.*|docker.*|br-.*\"}[5m])) / 1024 / 1024",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        100
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Network traffic high on {{ $labels.instance }}",
+            "description": "Combined receive and transmit traffic has exceeded 100 MiB/s for 5 minutes. Current value: {{ $values.B.Value }} MiB/s.",
+            "priority_definition": "P1: degradation or capacity warning that should be handled during working hours."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "network",
+            "severity": "warning",
+            "priority": "P1"
+          }
+        },
+        {
+          "uid": "host_tcp_connections_high",
+          "title": "Established TCP connections above 1000",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "node_netstat_Tcp_CurrEstab{job=~\"node-exporter.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        1000
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "TCP connection count high on {{ $labels.instance }}",
+            "description": "Established TCP connections have exceeded 1000 for 5 minutes. Current value: {{ $values.B.Value }}.",
+            "priority_definition": "P1: degradation or capacity warning that should be handled during working hours."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "network",
+            "severity": "warning",
+            "priority": "P1"
+          }
+        },
+        {
+          "uid": "besu_txpool_expired_custom",
+          "title": "P1 Besu txpool messages expired (custom metric)",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "increase(besu_custom_txpool_expired_total{job=~\"besu.*\"}[10m])",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "0s",
+          "annotations": {
+            "summary": "Besu txpool transactions expired: {{ $labels.instance }}",
+            "description": "Paused by default. Besu native transactions_removed_total only labels removals as addedToBlock or dropped and does not expose timed eviction separately. Enable after exporting besu_custom_txpool_expired_total from logs, a plugin, or node-exporter textfile collector.",
+            "priority_definition": "P1: degradation or capacity warning that should be handled during working hours."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "txpool",
+            "severity": "warning",
+            "priority": "P1"
+          },
+          "isPaused": true
+        },
+        {
+          "uid": "besu_txpool_capacity_high",
+          "title": "P1 Besu txpool capacity high",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "PROMETHEUS_DS_UID",
+              "relativeTimeRange": {
+                "from": 600,
+                "to": 0
+              },
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "PROMETHEUS_DS_UID"
+                },
+                "editorMode": "code",
+                "expr": "besu_transaction_pool_transactions{job=~\"besu.*\"}",
+                "instant": true,
+                "intervalMs": 1000,
+                "legendFormat": "{{instance}}",
+                "maxDataPoints": 43200,
+                "range": false,
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "A",
+                "reducer": "last",
+                "type": "reduce",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "datasourceUid": "__expr__",
+              "model": {
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "expression": "B",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        1000
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "type": "threshold",
+                "refId": "C"
+              }
+            }
+          ],
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "for": "5m",
+          "annotations": {
+            "summary": "Besu txpool size is high: {{ $labels.instance }}",
+            "description": "The transaction pool contains more than 1000 transactions for 5 minutes. Current size: {{ $values.B.Value }}. Replace 1000 with the operational threshold derived from your --tx-pool-max-size or layered pool capacity.",
+            "priority_definition": "P1: degradation or capacity warning that should be handled during working hours."
+          },
+          "labels": {
+            "service": "besu",
+            "component": "txpool",
+            "severity": "warning",
+            "priority": "P1"
+          },
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}
