@@ -1,0 +1,431 @@
+const http = require("http");
+const fs = require("fs");
+
+const HOST = process.env.EXPORTER_HOST || "0.0.0.0";
+const PORT = Number(process.env.EXPORTER_PORT || 9200);
+
+const BESU_LOG_FILE =
+  process.env.BESU_LOG_FILE || "/var/log/besu/besu.log";
+
+const BESU_CONFIG_FILE =
+  process.env.BESU_CONFIG_FILE || "/tmp/config.toml";
+
+const POLL_INTERVAL_MS = Number(
+  process.env.POLL_INTERVAL_MS || 2000
+);
+
+/*
+ * Exporter 内部状态。
+ */
+const metrics = {
+  currentRound: 0,
+  currentBlock: 0,
+
+  roundChangeTotal: 0,
+  roundTimeoutTotal: 0,
+  roundChangeMessageTotal: 0,
+
+  syncModeFull: 0,
+  configReadable: 0,
+  logReadable: 0,
+
+  lastLogEventTimestamp: 0,
+  lastConfigCheckTimestamp: 0,
+};
+
+let logOffset = 0;
+let remainingLine = "";
+
+/*
+ * 解析 Starting new round N。
+ *
+ * Round 0 是每个新区块的正常初始轮次。
+ * Round 1、2、3 等表示发生了 Round Change。
+ */
+function processLogLine(line) {
+  const newRoundMatch = line.match(
+    /Starting new round\s+(\d+)/
+  );
+
+  if (newRoundMatch) {
+    const newRound = Number(newRoundMatch[1]);
+
+    metrics.currentRound = newRound;
+    metrics.lastLogEventTimestamp = nowSeconds();
+
+    if (newRound > 0) {
+      metrics.roundChangeTotal += 1;
+    }
+
+    console.log(
+      `[ROUND] current_round=${newRound}, ` +
+      `round_change_total=${metrics.roundChangeTotal}`
+    );
+  }
+
+  /*
+   * 这条日志表示本地 Round 超时，或者基于 RC quorum 发起切换。
+   */
+  if (
+    line.includes(
+      "Round has expired or changing based on RC quorum"
+    )
+  ) {
+    metrics.roundTimeoutTotal += 1;
+    metrics.lastLogEventTimestamp = nowSeconds();
+
+    console.log(
+      `[ROUND EXPIRY] total=${metrics.roundTimeoutTotal}`
+    );
+  }
+
+  /*
+   * 这条日志表示收到其他 Validator 的 RoundChange 消息。
+   * 它不是本地真正切换 Round 的次数。
+   */
+  const roundChangeMessageMatch = line.match(
+    /Round change from\s+(.+?):\s+block\s+(\d+),\s+round\s+(\d+)/
+  );
+
+  if (roundChangeMessageMatch) {
+    const author = roundChangeMessageMatch[1];
+    const block = Number(roundChangeMessageMatch[2]);
+    const round = Number(roundChangeMessageMatch[3]);
+
+    metrics.currentBlock = block;
+    metrics.roundChangeMessageTotal += 1;
+    metrics.lastLogEventTimestamp = nowSeconds();
+
+    console.log(
+      `[ROUND MESSAGE] author=${author}, ` +
+      `block=${block}, round=${round}`
+    );
+  }
+}
+
+/*
+ * 增量读取日志。
+ *
+ * 不会每次重新读取整个文件。
+ * 如果日志被 truncate 或 rotate，则从文件开头重新读取。
+ */
+function pollBesuLog() {
+  fs.stat(BESU_LOG_FILE, (statError, stat) => {
+    if (statError) {
+      metrics.logReadable = 0;
+
+      console.error(
+        `[LOG] Cannot read ${BESU_LOG_FILE}: ` +
+        statError.message
+      );
+
+      return;
+    }
+
+    metrics.logReadable = 1;
+
+    if (stat.size < logOffset) {
+      console.log(
+        "[LOG] Log file was truncated or rotated. Resetting offset."
+      );
+
+      logOffset = 0;
+      remainingLine = "";
+    }
+
+    if (stat.size === logOffset) {
+      return;
+    }
+
+    const stream = fs.createReadStream(BESU_LOG_FILE, {
+      start: logOffset,
+      end: stat.size - 1,
+      encoding: "utf8",
+    });
+
+    let data = "";
+
+    stream.on("data", (chunk) => {
+      data += chunk;
+    });
+
+    stream.on("end", () => {
+      logOffset = stat.size;
+
+      const completeData = remainingLine + data;
+      const lines = completeData.split(/\r?\n/);
+
+      /*
+       * 最后一个元素可能是不完整的一行。
+       */
+      remainingLine = lines.pop() || "";
+
+      for (const line of lines) {
+        processLogLine(line);
+      }
+    });
+
+    stream.on("error", (error) => {
+      metrics.logReadable = 0;
+
+      console.error(
+        `[LOG] Read error: ${error.message}`
+      );
+    });
+  });
+}
+
+/*
+ * 读取 TOML 中的 sync-mode。
+ *
+ * 支持：
+ *
+ * sync-mode = "FULL"
+ * sync-mode="FULL"
+ * sync-mode = 'FULL'
+ * sync-mode = "full"
+ */
+function checkConfigFile() {
+  fs.readFile(
+    BESU_CONFIG_FILE,
+    "utf8",
+    (error, content) => {
+      metrics.lastConfigCheckTimestamp = nowSeconds();
+
+      if (error) {
+        metrics.configReadable = 0;
+        metrics.syncModeFull = 0;
+
+        console.error(
+          `[CONFIG] Cannot read ${BESU_CONFIG_FILE}: ` +
+          error.message
+        );
+
+        return;
+      }
+
+      metrics.configReadable = 1;
+
+      /*
+       * 忽略以 # 开头的注释行。
+       */
+      const activeLines = content
+        .split(/\r?\n/)
+        .filter((line) => {
+          return !line.trim().startsWith("#");
+        })
+        .join("\n");
+
+      const match = activeLines.match(
+        /^\s*sync-mode\s*=\s*["']?([^"'#\s]+)["']?/im
+      );
+
+      if (!match) {
+        metrics.syncModeFull = 0;
+
+        console.log(
+          "[CONFIG] sync-mode was not found"
+        );
+
+        return;
+      }
+
+      const syncMode = match[1]
+        .trim()
+        .toUpperCase();
+
+      metrics.syncModeFull =
+        syncMode === "FULL" ? 1 : 0;
+
+      console.log(
+        `[CONFIG] sync-mode=${syncMode}, ` +
+        `is_full=${metrics.syncModeFull}`
+      );
+    }
+  );
+}
+
+function nowSeconds() {
+  return Math.floor(Date.now() / 1000);
+}
+
+/*
+ * 转义 Prometheus HELP 文本。
+ */
+function escapeHelp(text) {
+  return text.replace(/\\/g, "\\\\").replace(/\n/g, "\\n");
+}
+
+/*
+ * 生成 Prometheus 文本格式。
+ */
+function buildMetricsResponse() {
+  const output = [];
+
+  addGauge(
+    output,
+    "besu_custom_qbft_current_round",
+    "Current QBFT round parsed from Besu logs",
+    metrics.currentRound
+  );
+
+  addGauge(
+    output,
+    "besu_custom_qbft_current_block",
+    "Latest QBFT block number observed in RoundChange logs",
+    metrics.currentBlock
+  );
+
+  addCounter(
+    output,
+    "besu_custom_qbft_round_change_total",
+    "Number of observed transitions to QBFT rounds greater than zero",
+    metrics.roundChangeTotal
+  );
+
+  addCounter(
+    output,
+    "besu_custom_qbft_round_expiry_total",
+    "Number of observed QBFT round expiry or RC quorum events",
+    metrics.roundTimeoutTotal
+  );
+
+  addCounter(
+    output,
+    "besu_custom_qbft_round_change_messages_total",
+    "Number of RoundChange messages observed in Besu logs",
+    metrics.roundChangeMessageTotal
+  );
+
+  addGauge(
+    output,
+    "besu_custom_config_sync_mode_full",
+    "Whether sync-mode in the Besu configuration is FULL: 1 means FULL, 0 means not FULL",
+    metrics.syncModeFull
+  );
+
+  addGauge(
+    output,
+    "besu_custom_config_file_readable",
+    "Whether the Besu configuration file can be read",
+    metrics.configReadable
+  );
+
+  addGauge(
+    output,
+    "besu_custom_log_file_readable",
+    "Whether the Besu log file can be read",
+    metrics.logReadable
+  );
+
+  addGauge(
+    output,
+    "besu_custom_last_log_event_timestamp_seconds",
+    "Unix timestamp of the latest matching QBFT log event",
+    metrics.lastLogEventTimestamp
+  );
+
+  addGauge(
+    output,
+    "besu_custom_last_config_check_timestamp_seconds",
+    "Unix timestamp of the latest configuration check",
+    metrics.lastConfigCheckTimestamp
+  );
+
+  return `${output.join("\n")}\n`;
+}
+
+function addGauge(output, name, help, value) {
+  output.push(`# HELP ${name} ${escapeHelp(help)}`);
+  output.push(`# TYPE ${name} gauge`);
+  output.push(`${name} ${Number(value)}`);
+}
+
+function addCounter(output, name, help, value) {
+  output.push(`# HELP ${name} ${escapeHelp(help)}`);
+  output.push(`# TYPE ${name} counter`);
+  output.push(`${name} ${Number(value)}`);
+}
+
+const server = http.createServer(
+  (request, response) => {
+    if (
+      request.method === "GET" &&
+      request.url === "/metrics"
+    ) {
+      const body = buildMetricsResponse();
+
+      response.writeHead(200, {
+        "Content-Type":
+          "text/plain; version=0.0.4; charset=utf-8",
+        "Content-Length":
+          Buffer.byteLength(body),
+      });
+
+      response.end(body);
+      return;
+    }
+
+    if (
+      request.method === "GET" &&
+      request.url === "/health"
+    ) {
+      const healthy =
+        metrics.logReadable === 1 &&
+        metrics.configReadable === 1;
+
+      const body = JSON.stringify({
+        status: healthy ? "UP" : "DEGRADED",
+        logReadable:
+          metrics.logReadable === 1,
+        configReadable:
+          metrics.configReadable === 1,
+        currentRound:
+          metrics.currentRound,
+        syncModeFull:
+          metrics.syncModeFull === 1,
+      });
+
+      response.writeHead(
+        healthy ? 200 : 503,
+        {
+          "Content-Type": "application/json",
+        }
+      );
+
+      response.end(body);
+      return;
+    }
+
+    response.writeHead(404, {
+      "Content-Type": "application/json",
+    });
+
+    response.end(
+      JSON.stringify({
+        message: "Not found",
+      })
+    );
+  }
+);
+
+setInterval(pollBesuLog, POLL_INTERVAL_MS);
+setInterval(checkConfigFile, POLL_INTERVAL_MS);
+
+/*
+ * 启动后立即执行一次。
+ */
+pollBesuLog();
+checkConfigFile();
+
+server.listen(PORT, HOST, () => {
+  console.log("Besu custom exporter started");
+  console.log(
+    `Metrics: http://${HOST}:${PORT}/metrics`
+  );
+  console.log(
+    `Health:  http://${HOST}:${PORT}/health`
+  );
+  console.log(`Log file: ${BESU_LOG_FILE}`);
+  console.log(`Config:   ${BESU_CONFIG_FILE}`);
+});
